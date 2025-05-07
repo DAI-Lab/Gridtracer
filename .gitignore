@@ -104,3 +104,9 @@ ENV/
 
 # Vim
 .*.swp
+
+# VSCode
+.vscode/
+
+# Output_data Folder
+syngrid/data_preprocessing/data_output/
