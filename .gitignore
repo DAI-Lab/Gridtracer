@@ -109,4 +109,4 @@ ENV/
 .vscode/
 
 # Output_data Folder
-syngrid/data_preprocessing/data_output/
+syngrid/data_processor/output/
