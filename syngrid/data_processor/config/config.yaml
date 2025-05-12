@@ -25,8 +25,11 @@ input_data:
   geofabrik_pois: "GeoFabrik_Points/gis_osm_pois_a_free_1.shp"
   geofabrik_landuse: "GeoFabrik_Landuse/gis_osm_landuse_a_free_1.shp"
   
+  # NREL data paths
+  nrel_data: "/Users/magic-rabbit/Documents/MA-data/NREL_Residential_typology.tsv"
+  
   # NLCD landuse data path
-  nlcd_landuse: "NLCD_Landuse/NLCD_Landuse.shp"
+  nlcd_landuse: "/Users/magic-rabbit/Documents/MA-data/nlcd_2023.tif"
 
 # Overpass API configuration
 overpass:
