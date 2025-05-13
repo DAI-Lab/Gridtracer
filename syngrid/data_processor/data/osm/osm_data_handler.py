@@ -1,14 +1,20 @@
 """
 OpenStreetMap data handler for SynGrid.
 
-This module provides functionality to extract building, POI, and land use data 
-from OpenStreetMap PBF files using PyROSM.
+This module provides functionality to extract building, POI, and power infrastructure data
+from OpenStreetMap using OSMnx to query the Overpass API directly.
 """
 
 import logging
+import time
+import traceback
 from pathlib import Path
 
-from pyrosm import OSM
+import osmnx as ox
+import pyproj
+import geopandas as gpd
+from shapely.geometry import Point
+from shapely.ops import transform
 
 from syngrid.data_processor.data.base import DataHandler
 
@@ -19,287 +25,478 @@ logger = logging.getLogger(__name__)
 class OSMDataHandler(DataHandler):
     """
     Handler for OpenStreetMap data.
-    
-    This class handles the extraction of buildings, POIs, and land use data 
-    from OpenStreetMap PBF files using PyROSM.
+
+    This class handles the extraction of buildings, POIs, and power infrastructure
+    from OpenStreetMap using OSMnx to query the Overpass API directly.
     """
-    
+
     def __init__(self, fips_dict, osm_pbf_file=None, output_dir=None):
         """
         Initialize the OSM data handler.
-        
+
         Args:
             fips_dict (dict): Dictionary containing region information
-            osm_pbf_file (str or Path, optional): Path to the OSM PBF file
+            osm_pbf_file (str or Path, optional): Path to the OSM PBF file (not used with OSMnx)
             output_dir (str or Path, optional): Base output directory
         """
         super().__init__(fips_dict, output_dir)
-        self.osm_pbf_file = Path(osm_pbf_file) if osm_pbf_file else None
-        self.osm = None
-    
+        self.boundary_polygon = None
+
+        # Configure OSMnx - using current API
+        ox.settings.use_cache = True
+        
+       
+
     def _get_dataset_name(self):
         """
         Get the name of the dataset for directory naming.
-        
+
         Returns:
             str: Dataset name
         """
         return "OSM"
-    
-    def initialize_osm(self):
+
+    def set_boundary(self, boundary_gdf):
         """
-        Initialize the PyROSM OSM object with the PBF file.
-        
+        Set the boundary for data extraction.
+
+        This method stores the boundary polygon for data extraction from OSM.
+
+        Args:
+            boundary_gdf (GeoDataFrame): Boundary to use for data extraction
+
         Returns:
-            bool: True if initialization successful, False otherwise
+            bool: True if boundary was set successfully, False otherwise
         """
-        if self.osm_pbf_file is None:
-            logger.error("No OSM PBF file provided")
+        if boundary_gdf is None or boundary_gdf.empty:
+            logger.warning("No boundary provided")
+            self.boundary_polygon = None
             return False
-        
+
         try:
-            logger.info(f"Initializing PyROSM with PBF file: {self.osm_pbf_file}")
-            self.osm = OSM(str(self.osm_pbf_file))
+            # Store the actual boundary polygon for precise filtering
+            # Ensure the boundary is in WGS84
+            if boundary_gdf.crs != "EPSG:4326":
+                boundary_gdf = boundary_gdf.to_crs("EPSG:4326")
+
+            self.boundary_polygon = boundary_gdf.geometry.iloc[0]
+
+            # For safety with the Overpass API, simplify the polygon if it's very complex
+            if len(self.boundary_polygon.exterior.coords) > 1000:
+                logger.info(
+                    f"Complex polygon with {len(self.boundary_polygon.exterior.coords)} points, simplifying...")
+                self.boundary_polygon = self.boundary_polygon.simplify(
+                    0.0001)  # ~10m simplification
+
+            logger.info("Boundary polygon set successfully for OSM extraction")
             return True
         except Exception as e:
-            logger.error(f"Error initializing PyROSM: {e}")
+            logger.error(f"Error setting boundary: {e}")
+            logger.error(traceback.format_exc())
+            self.boundary_polygon = None
             return False
-    
-    def download(self):
+
+    def deduplicate_power_features(self, power_gdf, distance_threshold_meters=10):
         """
-        Extract data from OSM PBF file.
-        
-        Unlike other data handlers, this doesn't download data from the web
-        but rather processes a local OSM PBF file.
-        
+        Deduplicate power infrastructure features that are within a distance threshold.
+
+        Args:
+            power_gdf (GeoDataFrame): GeoDataFrame containing power infrastructure features
+            distance_threshold_meters (float): Distance threshold in meters
+
+        Returns:
+            GeoDataFrame: Deduplicated GeoDataFrame
+        """
+        if power_gdf is None or power_gdf.empty:
+            return power_gdf
+
+        logger.info(
+            f"Deduplicating power features (threshold: {distance_threshold_meters}m)")
+
+        # Create a projection for accurate distance calculation
+        wgs84 = pyproj.CRS('EPSG:4326')
+        utm = pyproj.CRS('EPSG:32619')  # UTM zone 19N (Northeast US), adjust as needed
+        project = pyproj.Transformer.from_crs(wgs84, utm, always_xy=True).transform
+
+        # Create UTM-projected geometries for distance calculation
+        power_gdf['geometry_utm'] = power_gdf.geometry.apply(
+            lambda geom: transform(project, geom) if geom else None
+        )
+
+        # Create a copy to avoid modifying during iteration
+        deduplicated_indices = []
+        to_remove = set()
+
+        # Get feature indices by type priority (Way > Relation > Node)
+        way_indices = power_gdf[power_gdf['element_type'] == 'way'].index.tolist()
+        relation_indices = power_gdf[power_gdf['element_type'] == 'relation'].index.tolist()
+        node_indices = power_gdf[power_gdf['element_type'] == 'node'].index.tolist()
+
+        # Process in priority order
+        for priority_indices in [way_indices, relation_indices, node_indices]:
+            for idx in priority_indices:
+                if idx in to_remove:
+                    continue
+
+                # Get the UTM geometry for this feature
+                geom_utm = power_gdf.loc[idx, 'geometry_utm']
+
+                if geom_utm is None:
+                    continue
+
+                # Find all features within threshold distance
+                for other_idx, other_row in power_gdf.iterrows():
+                    if (other_idx == idx or other_idx in to_remove or
+                            other_idx in deduplicated_indices):
+                        continue
+
+                    other_geom_utm = other_row['geometry_utm']
+                    if other_geom_utm is None:
+                        continue
+
+                    # Calculate distance in meters
+                    distance = geom_utm.distance(other_geom_utm)
+
+                    if distance <= distance_threshold_meters:
+                        # Mark for removal based on type priority
+                        idx_type = power_gdf.loc[idx, 'element_type']
+                        other_type = other_row['element_type']
+
+                        if idx_type == 'way' and other_type != 'way':
+                            to_remove.add(other_idx)
+                        elif idx_type == 'relation' and other_type == 'node':
+                            to_remove.add(other_idx)
+                        elif idx_type == other_type:
+                            # If same type, keep the one with more tags/information
+                            idx_tags = (len(power_gdf.loc[idx, 'tags'])
+                                      if isinstance(power_gdf.loc[idx, 'tags'], dict) else 0)
+                            other_tags = (len(other_row['tags'])
+                                        if isinstance(other_row['tags'], dict) else 0)
+
+                            if idx_tags >= other_tags:
+                                to_remove.add(other_idx)
+                            else:
+                                to_remove.add(idx)
+                                break  # Stop checking this feature as it's being removed
+                        else:
+                            to_remove.add(idx)
+                            break  # Stop checking this feature as it's being removed
+
+                # If this feature wasn't removed, add it to deduplicated list
+                if idx not in to_remove:
+                    deduplicated_indices.append(idx)
+
+        # Remove temporary UTM geometry column
+        power_gdf = power_gdf.drop(columns=['geometry_utm'])
+
+        # Create new GeoDataFrame with deduplicated features
+        deduplicated_gdf = power_gdf.loc[deduplicated_indices].copy()
+
+        logger.info(
+            f"Removed {len(to_remove)} duplicate features, {len(deduplicated_gdf)} remaining")
+        return deduplicated_gdf
+
+    def extract_power_infrastructure(self, boundary_gdf=None):
+        """
+        Extract power infrastructure features (transformers, substations, poles) from OSM
+        using OSMnx to query the Overpass API directly.
+
+        Args:
+            boundary_gdf (GeoDataFrame, optional): Boundary to extract data for
+
+        Returns:
+            GeoDataFrame: GeoDataFrame containing power infrastructure features
+        """
+        try:
+            # Set boundary if provided
+            if boundary_gdf is not None and not boundary_gdf.empty:
+                if not self.set_boundary(boundary_gdf):
+                    return None
+
+            # Ensure we have a boundary polygon
+            if self.boundary_polygon is None:
+                logger.error("No boundary polygon available for extraction")
+                return None
+
+            logger.info("Extracting power infrastructure using OSMnx with Overpass API")
+
+            # Define power infrastructure tags
+            power_tags = {
+                "power": ["transformer", "substation", "pole"]
+            }
+
+            # Extract power infrastructure using OSMnx's current API
+            power_features = ox.features.features_from_polygon(
+                polygon=self.boundary_polygon,
+                tags=power_tags
+            )
+
+            if power_features is None or power_features.empty:
+                logger.warning("No power infrastructure found in OpenStreetMap")
+                return None
+
+            logger.info(f"Successfully extracted {len(power_features)} power features with OSMnx")
+
+            # Add element_type column based on geometry
+            power_features['element_type'] = power_features.geometry.apply(
+                lambda g: 'node' if isinstance(g, Point) else 'way'
+            )
+
+            # Filter abandoned infrastructure and keep only poles with transformers
+            filtered_features = power_features.copy()
+
+            # Check if feature is abandoned
+            def is_abandoned(tags):
+                if not isinstance(tags, dict):
+                    return False
+
+                tag_dict = tags if isinstance(tags, dict) else {}
+                return (tag_dict.get('abandoned') == 'yes'
+                        or tag_dict.get('abandoned:substation') == 'yes'
+                        or tag_dict.get('abandoned:building') == 'transformer')
+
+            # Check if pole has a distribution transformer
+            def has_distribution_transformer(tags):
+                if not isinstance(tags, dict):
+                    return False
+
+                tag_dict = tags if isinstance(tags, dict) else {}
+                return tag_dict.get('transformer') == 'distribution'
+
+            # In OSMnx, tags are in a series of columns, not a dictionary
+            # We'll need to reconstruct the tags dictionary
+            filtered_features['tags'] = filtered_features.apply(
+                lambda row: {col: row[col] for col in row.index if col not in
+                            ['geometry', 'element_type', 'osmid', 'tags']},
+                axis=1
+            )
+
+            # Get power type from columns
+            filtered_features['power'] = filtered_features['tags'].apply(
+                lambda tag_dict: tag_dict.get('power') if isinstance(tag_dict, dict) else None
+            )
+
+            # Apply filters
+            non_abandoned_mask = ~filtered_features['tags'].apply(is_abandoned)
+            transformer_substation_mask = filtered_features['power'].isin(
+                ['transformer', 'substation'])
+
+            # For poles, keep only those with distribution transformers
+            poles_mask = ((filtered_features['power'] == 'pole')
+                        & filtered_features['tags'].apply(has_distribution_transformer))
+
+            # Combine masks
+            final_mask = (transformer_substation_mask & non_abandoned_mask) | poles_mask
+            filtered_features = filtered_features[final_mask]
+
+            logger.info(f"Power features after filtering: {len(filtered_features)}")
+
+            # Save power features
+            power_filepath = self.dataset_output_dir / "power.geojson"
+            filtered_features.to_file(power_filepath, driver="GeoJSON")
+            logger.info(f"Saved power features to {power_filepath}")
+
+            # Deduplicate features
+            deduplicated_features = self.deduplicate_power_features(filtered_features)
+
+            return deduplicated_features
+
+        except Exception as e:
+            logger.error(f"Error extracting power infrastructure: {e}")
+            logger.error(traceback.format_exc())
+            return None
+
+    def extract_buildings(self, boundary_gdf=None):
+        """
+        Extract buildings using OSMnx with direct polygon boundary filtering.
+
+        This method uses the Overpass API to directly query buildings within
+        the exact polygon boundary.
+
+        Args:
+            boundary_gdf (GeoDataFrame, optional): Boundary to extract buildings for
+
+        Returns:
+            tuple: (GeoDataFrame of buildings, Path to saved file)
+        """
+        try:
+            start_time = time.time()
+
+            # Set boundary if provided
+            if boundary_gdf is not None and not boundary_gdf.empty:
+                if not self.set_boundary(boundary_gdf):
+                    return None, None
+
+            # Ensure we have a boundary polygon
+            if self.boundary_polygon is None:
+                logger.error("No boundary polygon available for extraction")
+                return None, None
+
+            logger.info("Extracting buildings using OSMnx with Overpass API")
+
+            # Extract buildings using OSMnx's current API
+            buildings = ox.features.features_from_polygon(
+                polygon=self.boundary_polygon,
+                tags={"building": True}
+            )
+
+            if buildings is None or buildings.empty:
+                logger.warning("No buildings found in OpenStreetMap")
+                return None, None
+
+            extraction_time = time.time() - start_time
+            logger.info(
+                f"Successfully extracted {len(buildings)} buildings in {extraction_time:.2f}s")
+
+            # Save buildings
+            save_start = time.time()
+            buildings_filepath = self.dataset_output_dir / "buildings.geojson"
+            buildings.to_file(buildings_filepath, driver="GeoJSON")
+            save_time = time.time() - save_start
+            logger.info(f"Saved buildings to {buildings_filepath} in {save_time:.2f}s")
+
+            total_time = time.time() - start_time
+            logger.info(f"Total building extraction completed in {total_time:.2f}s")
+
+            return buildings, buildings_filepath
+
+        except Exception as e:
+            logger.error(f"Error extracting buildings: {e}")
+            logger.error(traceback.format_exc())
+            return None, None
+
+    def extract_pois(self, boundary_gdf=None):
+        """
+        Extract POIs using OSMnx with direct polygon boundary filtering.
+
+        This method uses the Overpass API to directly query POIs within
+        the exact polygon boundary.
+
+        Args:
+            boundary_gdf (GeoDataFrame, optional): Boundary to extract POIs for
+
+        Returns:
+            tuple: (GeoDataFrame of POIs, Path to saved file)
+        """
+        try:
+            # Set boundary if provided
+            if boundary_gdf is not None and not boundary_gdf.empty:
+                if not self.set_boundary(boundary_gdf):
+                    return None, None
+
+            # Ensure we have a boundary polygon
+            if self.boundary_polygon is None:
+                logger.error("No boundary polygon available for extraction")
+                return None, None
+
+            logger.info("Extracting POIs using OSMnx with Overpass API")
+
+            # Define POI tags
+            poi_tags = {
+                "amenity": True,
+                "shop": True,
+                "tourism": True,
+                "leisure": True,
+                "office": True
+            }
+
+            # Extract POIs using OSMnx's current API
+            pois = ox.features.features_from_polygon(
+                polygon=self.boundary_polygon,
+                tags=poi_tags
+            )
+
+            if pois is None or pois.empty:
+                logger.warning("No POIs found in OpenStreetMap")
+                return None, None
+
+            logger.info(f"Successfully extracted {len(pois)} POIs with OSMnx")
+
+            # Save POIs
+            pois_filepath = self.dataset_output_dir / "pois.geojson"
+            pois.to_file(pois_filepath, driver="GeoJSON")
+            logger.info(f"Saved POIs to {pois_filepath}")
+
+            return pois, pois_filepath
+
+        except Exception as e:
+            logger.error(f"Error extracting POIs: {e}")
+            logger.error(traceback.format_exc())
+            return None, None
+
+    def download(self, boundary_gdf=None):
+        """
+        Extract data from OpenStreetMap using OSMnx.
+
+        Args:
+            boundary_gdf (GeoDataFrame, optional): Boundary to extract data for
+
         Returns:
             dict: Dictionary containing extracted data:
                 - buildings: GeoDataFrame of buildings
                 - pois: GeoDataFrame of POIs
-                - landuse: GeoDataFrame of land use polygons
+                - power: GeoDataFrame of power infrastructure
         """
         results = {
             'buildings': None,
             'buildings_filepath': None,
             'pois': None,
             'pois_filepath': None,
-            'landuse': None,
-            'landuse_filepath': None
+            'power': None,
+            'power_filepath': None
         }
-        
-        if not self.initialize_osm():
-            return results
-        
+
         # Extract buildings
-        try:
-            logger.info("Extracting buildings from OSM PBF file")
-            buildings = self.osm.get_buildings()
-            
-            if buildings is not None and not buildings.empty:
-                logger.info(f"Extracted {len(buildings)} buildings")
-                buildings_filepath = self.dataset_output_dir / "buildings.geojson"
-                buildings.to_file(buildings_filepath, driver="GeoJSON")
-                logger.info(f"Saved buildings to {buildings_filepath}")
-                
-                results['buildings'] = buildings
-                results['buildings_filepath'] = buildings_filepath
-            else:
-                logger.warning("No buildings found in OSM PBF file")
-        except Exception as e:
-            logger.error(f"Error extracting buildings: {e}")
-        
+        buildings, buildings_filepath = self.extract_buildings(boundary_gdf)
+        if buildings is not None:
+            results['buildings'] = buildings
+            results['buildings_filepath'] = buildings_filepath
+
         # Extract POIs
+        pois, pois_filepath = self.extract_pois(boundary_gdf)
+        if pois is not None:
+            results['pois'] = pois
+            results['pois_filepath'] = pois_filepath
+
+        # Extract power infrastructure
         try:
-            logger.info("Extracting POIs from OSM PBF file")
-            pois = self.osm.get_pois()
-            
-            if pois is not None and not pois.empty:
-                logger.info(f"Extracted {len(pois)} POIs")
-                pois_filepath = self.dataset_output_dir / "pois.geojson"
-                pois.to_file(pois_filepath, driver="GeoJSON")
-                logger.info(f"Saved POIs to {pois_filepath}")
-                
-                results['pois'] = pois
-                results['pois_filepath'] = pois_filepath
+            power = self.extract_power_infrastructure(boundary_gdf)
+
+            if power is not None and not power.empty:
+                logger.info(f"Extracted {len(power)} power infrastructure features")
+                power_filepath = self.dataset_output_dir / "power.geojson"
+                power.to_file(power_filepath, driver="GeoJSON")
+                logger.info(f"Saved power infrastructure to {power_filepath}")
+
+                results['power'] = power
+                results['power_filepath'] = power_filepath
             else:
-                logger.warning("No POIs found in OSM PBF file")
+                logger.warning("No power infrastructure found in OpenStreetMap")
         except Exception as e:
-            logger.error(f"Error extracting POIs: {e}")
-        
-        # TODO: Extract landuse in future iterations
-        
+            logger.error(f"Error extracting power infrastructure: {e}")
+            logger.error(traceback.format_exc())
+
         return results
-    
+
     def process(self, boundary_gdf=None):
         """
-        Process OSM data for the region.
-        
-        Extract buildings, POIs, and land use from OSM PBF file and clip to region boundary.
-        
+        Process OSM data for the region using OSMnx.
+
+        Extract buildings, POIs, and power infrastructure from OpenStreetMap
+        using the exact boundary polygon.
+
         Args:
-            boundary_gdf (GeoDataFrame, optional): Boundary to clip data to.
-                If None, extracts all data in the PBF file.
-                
+            boundary_gdf (GeoDataFrame, optional): Boundary to extract data for.
+                Must be provided for OSMnx extraction.
+
         Returns:
             dict: Dictionary containing processed data and file paths.
         """
         logger.info(
             f"Processing OSM data for {self.fips_dict['state']} - {self.fips_dict['county']}"
         )
-        
-        # Extract all data from PBF file
-        osm_data = self.download()
-        
-        # If we have a boundary, clip the data
-        if boundary_gdf is not None and not boundary_gdf.empty:
-            logger.info("Clipping OSM data to region boundary")
-            
-            # Clip buildings if we have them
-            if osm_data['buildings'] is not None and not osm_data['buildings'].empty:
-                try:
-                    # Clip to boundary
-                    clipped_buildings = self.clip_to_boundary(
-                        osm_data['buildings'], 
-                        boundary_gdf
-                    )
-                    
-                    if clipped_buildings is not None and not clipped_buildings.empty:
-                        # Save clipped buildings
-                        clipped_filepath = self.dataset_output_dir / "buildings_clipped.geojson"
-                        clipped_buildings.to_file(clipped_filepath, driver="GeoJSON")
-                        logger.info(f"Saved clipped buildings to {clipped_filepath}")
-                        
-                        # Update results
-                        osm_data['buildings'] = clipped_buildings
-                        osm_data['buildings_clipped_filepath'] = clipped_filepath
-                    else:
-                        logger.warning("No buildings remain after clipping to boundary")
-                except Exception as e:
-                    logger.error(f"Error clipping buildings to boundary: {e}")
-            
-            # Clip POIs if we have them
-            if osm_data['pois'] is not None and not osm_data['pois'].empty:
-                try:
-                    # Clip to boundary
-                    clipped_pois = self.clip_to_boundary(
-                        osm_data['pois'], 
-                        boundary_gdf
-                    )
-                    
-                    if clipped_pois is not None and not clipped_pois.empty:
-                        # Save clipped POIs
-                        clipped_filepath = self.dataset_output_dir / "pois_clipped.geojson"
-                        clipped_pois.to_file(clipped_filepath, driver="GeoJSON")
-                        logger.info(f"Saved clipped POIs to {clipped_filepath}")
-                        
-                        # Update results
-                        osm_data['pois'] = clipped_pois
-                        osm_data['pois_clipped_filepath'] = clipped_filepath
-                    else:
-                        logger.warning("No POIs remain after clipping to boundary")
-                except Exception as e:
-                    logger.error(f"Error clipping POIs to boundary: {e}")
-        
+
+        # Extract all data with boundary filtering
+        osm_data = self.download(boundary_gdf)
+
         return osm_data
-    
-    def extract_by_bbox(self, boundary_gdf):
-        """
-        Extract OSM data using a bounding box from the boundary.
-        
-        This is an alternative to the regular process method when we want to 
-        extract data directly using a bounding box rather than extracting all 
-        and then clipping.
-        
-        Args:
-            boundary_gdf (GeoDataFrame): Boundary to define the bounding box
-                
-        Returns:
-            dict: Dictionary containing processed data and file paths.
-        """
-        if boundary_gdf is None or boundary_gdf.empty:
-            logger.error("No boundary provided for bounding box extraction")
-            return self.process()  # Fall back to regular processing
-        
-        # Initialize OSM
-        if not self.initialize_osm():
-            return {
-                'buildings': None,
-                'buildings_filepath': None,
-                'pois': None,
-                'pois_filepath': None,
-                'landuse': None,
-                'landuse_filepath': None
-            }
-        
-        try:
-            # Get total bounds from boundary
-            minx, miny, maxx, maxy = boundary_gdf.total_bounds
-            
-            # Create results dictionary
-            results = {
-                'buildings': None,
-                'buildings_filepath': None,
-                'pois': None,
-                'pois_filepath': None,
-                'landuse': None,
-                'landuse_filepath': None
-            }
-            
-            # Extract buildings with bounding box filter
-            bbox_str = f"{minx}, {miny}, {maxx}, {maxy}"
-            logger.info(f"Extracting buildings using bounding box: {bbox_str}")
-            buildings = self.osm.get_buildings(bounding_box=[minx, miny, maxx, maxy])
-            
-            if buildings is not None and not buildings.empty:
-                logger.info(f"Extracted {len(buildings)} buildings within bounding box")
-                buildings_filepath = self.dataset_output_dir / "buildings_bbox.geojson"
-                buildings.to_file(buildings_filepath, driver="GeoJSON")
-                logger.info(f"Saved buildings to {buildings_filepath}")
-                
-                # Further clip to exact boundary shape
-                clipped_buildings = self.clip_to_boundary(buildings, boundary_gdf)
-                
-                if clipped_buildings is not None and not clipped_buildings.empty:
-                    clipped_filepath = self.dataset_output_dir / "buildings_clipped.geojson"
-                    clipped_buildings.to_file(clipped_filepath, driver="GeoJSON")
-                    logger.info(f"Saved clipped buildings to {clipped_filepath}")
-                    
-                    results['buildings'] = clipped_buildings
-                    results['buildings_filepath'] = clipped_filepath
-                else:
-                    results['buildings'] = buildings
-                    results['buildings_filepath'] = buildings_filepath
-            else:
-                logger.warning("No buildings found within bounding box")
-            
-            # Extract POIs with bounding box filter
-            logger.info(f"Extracting POIs using bounding box: {bbox_str}")
-            pois = self.osm.get_pois(bounding_box=[minx, miny, maxx, maxy])
-            
-            if pois is not None and not pois.empty:
-                logger.info(f"Extracted {len(pois)} POIs within bounding box")
-                pois_filepath = self.dataset_output_dir / "pois_bbox.geojson"
-                pois.to_file(pois_filepath, driver="GeoJSON")
-                logger.info(f"Saved POIs to {pois_filepath}")
-                
-                # Further clip to exact boundary shape
-                clipped_pois = self.clip_to_boundary(pois, boundary_gdf)
-                
-                if clipped_pois is not None and not clipped_pois.empty:
-                    clipped_filepath = self.dataset_output_dir / "pois_clipped.geojson"
-                    clipped_pois.to_file(clipped_filepath, driver="GeoJSON")
-                    logger.info(f"Saved clipped POIs to {clipped_filepath}")
-                    
-                    results['pois'] = clipped_pois
-                    results['pois_filepath'] = clipped_filepath
-                else:
-                    results['pois'] = pois
-                    results['pois_filepath'] = pois_filepath
-            else:
-                logger.warning("No POIs found within bounding box")
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Error extracting data with bounding box: {e}")
-            return self.process()  # Fall back to regular processing 

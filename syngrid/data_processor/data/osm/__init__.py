@@ -8,3 +8,4 @@ from PBF files.
 from syngrid.data_processor.data.osm.osm_data_handler import OSMDataHandler
 
 __all__ = ['OSMDataHandler']
+ 

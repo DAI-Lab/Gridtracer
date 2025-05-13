@@ -8,8 +8,7 @@
 
 from syngrid.data_processor.config import ConfigLoader
 from syngrid.data_processor.data import CensusDataHandler, NRELDataHandler, OSMDataHandler
-from syngrid.data_processor.utils import logger, lookup_fips_codes, visualize_blocks
-
+from syngrid.data_processor.utils import logger, lookup_fips_codes, visualize_blocks, visualize_osm_data
 
 
 def main():
@@ -52,6 +51,7 @@ def main():
         plot_file = visualize_blocks(
             blocks_gdf=region_data['blocks'],
             subdivision_gdf=region_data['subdivision'],
+            fips_dict=fips_dict,
             title=title
         )
         logger.info(f"Generated visualization: {plot_file}")
@@ -76,27 +76,57 @@ def main():
 
     # 1.7: Extract OSM data for the region
     logger.info("1.7: Extracting OpenStreetMap data")
-    osm_data = None
     
     osm_handler = OSMDataHandler(
         fips_dict,
-        osm_pbf_file=input_file_paths['osm_pbf_file'],
         output_dir=output_dir
     )
-    # Use extract_by_bbox to extract data directly using the region boundary
+    
+    # Process OSM data with the region boundary for efficient extraction
     if region_data['boundary'] is not None and not region_data['boundary'].empty:
-        logger.info("Extracting OSM data using region boundary")
-        osm_data = osm_handler.extract_by_bbox(region_data['boundary'])
+        logger.info("Extracting OSM data using exact boundary polygon via OSMnx")
+        osm_data = osm_handler.process(region_data['boundary'])
     else:
-        # Fall back to processing the entire PBF file
-        logger.info("No region boundary available. Extracting all OSM data from PBF file.")
-        osm_data = osm_handler.process()
+        # We cannot process without a boundary when using OSMnx with Overpass API
+        logger.error("No region boundary available. OSMnx extraction requires a boundary polygon.")
+        logger.error("Please ensure a valid region boundary is available.")
+        osm_data = None
     
     if osm_data:
         if osm_data['buildings'] is not None:
             logger.info(f"Extracted {len(osm_data['buildings'])} OSM buildings")
         if osm_data['pois'] is not None:
             logger.info(f"Extracted {len(osm_data['pois'])} OSM POIs")
+        if osm_data['power'] is not None:
+            logger.info(f"Extracted {len(osm_data['power'])} power infrastructure features")
+            logger.info(f"Power features saved to: {osm_data['power_filepath']}")
+            
+        # 1.7.1: Visualize the OSM data
+        logger.info("1.7.1: Visualizing OpenStreetMap data")
+        
+        # First, create a visualization with all data elements
+        osm_plot_file = visualize_osm_data(
+            fips_dict=fips_dict,
+            boundary_gdf=region_data['boundary'],
+            output_dir=output_dir,
+            plot_buildings=True,
+            plot_pois=True,
+            plot_power=True
+        )
+        if osm_plot_file:
+            logger.info(f"Generated complete OSM data visualization: {osm_plot_file}")
+        
+        # Then create a visualization without POIs for clarity
+        osm_plot_no_pois = visualize_osm_data(
+            fips_dict=fips_dict,
+            boundary_gdf=region_data['boundary'],
+            output_dir=output_dir,
+            plot_buildings=True,
+            plot_pois=False,
+            plot_power=True
+        )
+        if osm_plot_no_pois:
+            logger.info(f"Generated OSM visualization without POIs: {osm_plot_no_pois}")
    
     # 1.8: Clip all datasets to the region boundary
     logger.info("1.8: Clipping all datasets to region boundary")
