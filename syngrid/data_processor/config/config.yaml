@@ -23,7 +23,7 @@ input_data:
   
   # OSM PBF file path
   # Download from https://download.geofabrik.de/ or similar source
-  osm_pbf_file: "/Users/magic-rabbit/Documents/MA-data/geofabrik_USNortheast.pbf"
+  osm_pbf_file: "/Users/magic-rabbit/Documents/MA-data/Massachusetts Latest OSM.pbf"
   
   # NREL data paths
   nrel_data: "/Users/magic-rabbit/Documents/MA-data/NREL_Residential_typology.tsv"

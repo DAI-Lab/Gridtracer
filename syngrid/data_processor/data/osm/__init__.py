@@ -1,11 +1,10 @@
 """
-OpenStreetMap data handlers for SynGrid.
+OSM data processing module.
 
-This module provides classes to handle extraction and processing of OpenStreetMap data
-from PBF files.
+This module contains utilities for processing OpenStreetMap (OSM) data
+for the SynGrid pipeline, including road network generation.
 """
 
-from syngrid.data_processor.data.osm.osm_data_handler import OSMDataHandler
+from syngrid.data_processor.data.osm.road_network_builder import Road_network_builder
 
-__all__ = ['OSMDataHandler']
- 
+__all__ = ['Road_network_builder']

@@ -5,9 +5,9 @@ import urllib.request
 from pathlib import Path
 
 import contextily as ctx
+import geopandas as gpd
 import matplotlib.pyplot as plt
 import pandas as pd
-import geopandas as gpd
 
 logger = logging.getLogger(__name__)
 
@@ -245,13 +245,13 @@ def visualize_blocks(blocks_gdf, subdivision_gdf=None, output_dir=None, fips_dic
     return str(output_file)
 
 
-def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None, 
-                    plot_buildings=True, plot_pois=True, plot_power=True):
+def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
+                       plot_buildings=True, plot_pois=True, plot_power=True):
     """
     Visualize OpenStreetMap data (buildings, POIs, and power infrastructure).
-    
-    This function finds the GeoJSON files for buildings, POIs, and power 
-    infrastructure in the OSM output directory based on the provided FIPS codes, 
+
+    This function finds the GeoJSON files for buildings, POIs, and power
+    infrastructure in the OSM output directory based on the provided FIPS codes,
     then plots them together on a map.
 
     Args:
@@ -269,63 +269,63 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
     if fips_dict is None:
         logger.error("FIPS dictionary required to locate OSM data files")
         return None
-    
+
     # Determine OSM data directory based on FIPS info
     state = fips_dict.get('state', 'unknown')
     county = fips_dict.get('county', 'unknown')
     subdivision = fips_dict.get('subdivision')
-    
+
     # Sanitize names for directory paths
     state_dir = state.replace(' ', '_')
     county_dir = county.replace(' ', '_')
-    
+
     # Create base path
     base_output_dir = Path("syngrid/data_processor/output")
     osm_data_dir = base_output_dir / state_dir / county_dir
-    
+
     # Add subdivision level if available
     if subdivision:
         subdivision_dir = subdivision.replace(' ', '_')
         osm_data_dir = osm_data_dir / subdivision_dir
-    
+
     # Complete path to OSM folder
     osm_data_dir = osm_data_dir / "OSM"
-    
+
     logger.info(f"Looking for OSM data in: {osm_data_dir}")
-    
+
     # Check for existence of required files
     buildings_file = osm_data_dir / "buildings.geojson"
     pois_file = osm_data_dir / "pois.geojson"
     power_file = osm_data_dir / "power.geojson"
-    
+
     # Load available data
     buildings_gdf = None
     pois_gdf = None
     power_gdf = None
-    
+
     if buildings_file.exists():
         logger.info(f"Loading buildings from {buildings_file}")
         buildings_gdf = gpd.read_file(buildings_file)
     else:
         logger.warning(f"Buildings file not found: {buildings_file}")
-    
+
     if pois_file.exists():
         logger.info(f"Loading POIs from {pois_file}")
         pois_gdf = gpd.read_file(pois_file)
     else:
         logger.warning(f"POIs file not found: {pois_file}")
-    
+
     if power_file.exists():
         logger.info(f"Loading power infrastructure from {power_file}")
         power_gdf = gpd.read_file(power_file)
     else:
         logger.warning(f"Power file not found: {power_file}")
-    
+
     # Check if any data was loaded
     if buildings_gdf is None and pois_gdf is None and power_gdf is None:
         logger.error("No OSM data found to visualize")
         return None
-    
+
     # Set up output directory for the plot
     if output_dir is None:
         # Use the standard directory structure based on FIPS info
@@ -333,36 +333,36 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
     else:
         # If output_dir is provided, use it as the base and add region-specific folders
         base_output_dir = Path(output_dir)
-        
+
         # Extract fields for directory structure
         state = fips_dict.get('state', 'unknown')
         county = fips_dict.get('county', 'unknown')
         subdivision = fips_dict.get('subdivision')
-        
+
         # Sanitize names for directory paths
         state_dir = state.replace(' ', '_')
         county_dir = county.replace(' ', '_')
-        
+
         # Create path structure
         output_dir = base_output_dir / state_dir / county_dir
-        
+
         # Add subdivision level if available
         if subdivision:
             subdivision_dir = subdivision.replace(' ', '_')
             output_dir = output_dir / subdivision_dir
-            
+
         # Add Plots directory
         output_dir = output_dir / "Plots"
-    
+
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"OSM plot will be saved to: {output_dir}")
-    
+
     # Create figure and axis
     fig, ax = plt.subplots(figsize=(15, 15))
-    
+
     # Initialize bounds
     bounds = None
-    
+
     # Convert data to Web Mercator for basemap compatibility and plot
     if plot_buildings and buildings_gdf is not None and not buildings_gdf.empty:
         try:
@@ -375,7 +375,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                 linewidth=0.2,
                 label='Buildings'
             )
-            
+
             if bounds is None:
                 bounds = list(buildings_mercator.total_bounds)
             else:
@@ -384,11 +384,11 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                 bounds[1] = min(bounds[1], bldg_bounds[1])
                 bounds[2] = max(bounds[2], bldg_bounds[2])
                 bounds[3] = max(bounds[3], bldg_bounds[3])
-                
+
             logger.info(f"Added {len(buildings_gdf)} buildings to plot")
         except Exception as e:
             logger.error(f"Error plotting buildings: {e}")
-    
+
     if plot_pois and pois_gdf is not None and not pois_gdf.empty:
         try:
             pois_mercator = pois_gdf.to_crs(epsg=3857)
@@ -400,7 +400,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                 alpha=0.7,
                 label='POIs'
             )
-            
+
             if bounds is None:
                 bounds = list(pois_mercator.total_bounds)
             else:
@@ -409,15 +409,15 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                 bounds[1] = min(bounds[1], poi_bounds[1])
                 bounds[2] = max(bounds[2], poi_bounds[2])
                 bounds[3] = max(bounds[3], poi_bounds[3])
-                
+
             logger.info(f"Added {len(pois_gdf)} POIs to plot")
         except Exception as e:
             logger.error(f"Error plotting POIs: {e}")
-    
+
     if plot_power and power_gdf is not None and not power_gdf.empty:
         try:
             power_mercator = power_gdf.to_crs(epsg=3857)
-            
+
             # Plot power features with different styles based on type
             # First, check if 'power' column exists
             if 'power' in power_gdf.columns:
@@ -433,7 +433,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                         alpha=0.8,
                         label='Transformers'
                     )
-                
+
                 # Plot substations
                 substations = power_mercator[power_mercator['power'] == 'substation']
                 if not substations.empty:
@@ -446,7 +446,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                         alpha=0.8,
                         label='Substations'
                     )
-                
+
                 # Plot poles
                 poles = power_mercator[power_mercator['power'] == 'pole']
                 if not poles.empty:
@@ -468,7 +468,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                     alpha=0.7,
                     label='Power Infrastructure'
                 )
-            
+
             if bounds is None:
                 bounds = list(power_mercator.total_bounds)
             else:
@@ -477,11 +477,11 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                 bounds[1] = min(bounds[1], power_bounds[1])
                 bounds[2] = max(bounds[2], power_bounds[2])
                 bounds[3] = max(bounds[3], power_bounds[3])
-                
+
             logger.info(f"Added {len(power_gdf)} power infrastructure features to plot")
         except Exception as e:
             logger.error(f"Error plotting power infrastructure: {e}")
-    
+
     # If region boundary provided, plot it too
     if boundary_gdf is not None and not boundary_gdf.empty:
         try:
@@ -494,7 +494,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                 linestyle='--',
                 label='Region Boundary'
             )
-            
+
             # Update bounds to include boundary
             boundary_bounds = boundary_mercator.total_bounds
             if bounds is not None:
@@ -504,11 +504,11 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                 bounds[3] = max(bounds[3], boundary_bounds[3])
             else:
                 bounds = list(boundary_bounds)
-                
+
             logger.info("Added region boundary to plot")
         except Exception as e:
             logger.error(f"Error plotting region boundary: {e}")
-    
+
     # Add basemap
     try:
         ctx.add_basemap(
@@ -520,7 +520,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
         )
     except Exception as e:
         logger.warning(f"Could not add basemap: {e}")
-    
+
     # If we have bounds, set the axis limits
     if bounds:
         # Add some padding around the bounds
@@ -528,19 +528,19 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
         pad_y = (bounds[3] - bounds[1]) * 0.05
         ax.set_xlim(bounds[0] - pad_x, bounds[2] + pad_x)
         ax.set_ylim(bounds[1] - pad_y, bounds[3] + pad_y)
-    
+
     # Add legend
     plt.legend(loc='upper right', fontsize=10)
-    
+
     # Set title with region information
     title_parts = []
     if subdivision:
         title_parts.append(subdivision)
     title_parts.extend([county, state])
-    
+
     # Create base title with region info
     region_title = ", ".join(title_parts)
-    
+
     # Add data type indicators to title
     title_elements = []
     if plot_buildings:
@@ -549,22 +549,22 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
         title_elements.append("POIs")
     if plot_power:
         title_elements.append("Power Infrastructure")
-    
+
     if len(title_elements) > 0:
         data_title = " & ".join(title_elements)
         title = f"{data_title} for {region_title}"
     else:
         title = f"OpenStreetMap Data for {region_title}"
-    
+
     plt.title(title, pad=20, fontsize=16)
-    
+
     # Remove axes
     ax.set_axis_off()
-    
+
     # Generate filename based on region and timestamp
     timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
     region_name = "_".join([x.replace(" ", "_").lower() for x in title_parts if x])
-    
+
     # Add data type indicators to filename
     filename_parts = ["osm"]
     if plot_buildings:
@@ -573,15 +573,15 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
         filename_parts.append("poi")
     if plot_power:
         filename_parts.append("power")
-    
+
     filename_prefix = "_".join(filename_parts)
     output_file = output_dir / f"{filename_prefix}_{region_name}_{timestamp}.png"
-    
+
     # Save plot
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     logger.info(f"Saved OSM data visualization to: {output_file}")
-    
+
     # Close plot to free memory
     plt.close()
-    
+
     return str(output_file)

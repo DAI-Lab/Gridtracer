@@ -8,11 +8,9 @@ from OpenStreetMap using OSMnx to query the Overpass API directly.
 import logging
 import time
 import traceback
-from pathlib import Path
 
 import osmnx as ox
 import pyproj
-import geopandas as gpd
 from shapely.geometry import Point
 from shapely.ops import transform
 
@@ -44,8 +42,6 @@ class OSMDataHandler(DataHandler):
 
         # Configure OSMnx - using current API
         ox.settings.use_cache = True
-        
-       
 
     def _get_dataset_name(self):
         """
@@ -146,8 +142,8 @@ class OSMDataHandler(DataHandler):
 
                 # Find all features within threshold distance
                 for other_idx, other_row in power_gdf.iterrows():
-                    if (other_idx == idx or other_idx in to_remove or
-                            other_idx in deduplicated_indices):
+                    if (other_idx == idx or other_idx in to_remove
+                            or other_idx in deduplicated_indices):
                         continue
 
                     other_geom_utm = other_row['geometry_utm']
@@ -169,9 +165,9 @@ class OSMDataHandler(DataHandler):
                         elif idx_type == other_type:
                             # If same type, keep the one with more tags/information
                             idx_tags = (len(power_gdf.loc[idx, 'tags'])
-                                      if isinstance(power_gdf.loc[idx, 'tags'], dict) else 0)
+                                        if isinstance(power_gdf.loc[idx, 'tags'], dict) else 0)
                             other_tags = (len(other_row['tags'])
-                                        if isinstance(other_row['tags'], dict) else 0)
+                                          if isinstance(other_row['tags'], dict) else 0)
 
                             if idx_tags >= other_tags:
                                 to_remove.add(other_idx)
@@ -267,7 +263,7 @@ class OSMDataHandler(DataHandler):
             # We'll need to reconstruct the tags dictionary
             filtered_features['tags'] = filtered_features.apply(
                 lambda row: {col: row[col] for col in row.index if col not in
-                            ['geometry', 'element_type', 'osmid', 'tags']},
+                             ['geometry', 'element_type', 'osmid', 'tags']},
                 axis=1
             )
 
@@ -283,7 +279,7 @@ class OSMDataHandler(DataHandler):
 
             # For poles, keep only those with distribution transformers
             poles_mask = ((filtered_features['power'] == 'pole')
-                        & filtered_features['tags'].apply(has_distribution_transformer))
+                          & filtered_features['tags'].apply(has_distribution_transformer))
 
             # Combine masks
             final_mask = (transformer_substation_mask & non_abandoned_mask) | poles_mask
