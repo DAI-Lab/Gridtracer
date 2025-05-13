@@ -17,13 +17,13 @@ output_dir: "syngrid/data_processor/output/"
 input_data:
 
   # Census data paths
-  census_population: "ZensusPopulation/ZensusPopulation.shp"
-  census_buildings: "ZensusGebaude/ZensusGebaude.shp"
+  census_population: "ZensusPopulation/ZensusPopulation.shp" # TODO: Add path to census population data
+  census_buildings: "ZensusGebaude/ZensusGebaude.shp" # TODO: Add path to census buildings data
   
-  # Geofabrik data paths
-  geofabrik_buildings: "GeoFabrik_Buildings/gis_osm_buildings_a_free_1.shp"
-  geofabrik_pois: "GeoFabrik_Points/gis_osm_pois_a_free_1.shp"
-  geofabrik_landuse: "GeoFabrik_Landuse/gis_osm_landuse_a_free_1.shp"
+  
+  # OSM PBF file path
+  # Download from https://download.geofabrik.de/ or similar source
+  osm_pbf_file: "/Users/magic-rabbit/Documents/MA-data/geofabrik_USNortheast.pbf"
   
   # NREL data paths
   nrel_data: "/Users/magic-rabbit/Documents/MA-data/NREL_Residential_typology.tsv"

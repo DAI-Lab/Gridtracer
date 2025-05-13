@@ -1,10 +1,10 @@
 """
-OpenStreetMap data extraction module for SynGrid.
+OpenStreetMap data handlers for SynGrid.
 
-This module provides functions to extract buildings, roads, POIs, and power infrastructure
-from OpenStreetMap data for a specified region.
+This module provides classes to handle extraction and processing of OpenStreetMap data
+from PBF files.
 """
 
-from .osm_extractor import osm_data_extraction
+from syngrid.data_processor.data.osm.osm_data_handler import OSMDataHandler
 
-__all__ = ['osm_data_extraction']
+__all__ = ['OSMDataHandler']

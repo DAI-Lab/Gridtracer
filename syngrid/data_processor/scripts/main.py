@@ -7,11 +7,9 @@
 # 4. Transformer Network Extraction
 
 from syngrid.data_processor.config import ConfigLoader
-from syngrid.data_processor.data import CensusDataHandler, NRELDataHandler
+from syngrid.data_processor.data import CensusDataHandler, NRELDataHandler, OSMDataHandler
 from syngrid.data_processor.utils import logger, lookup_fips_codes, visualize_blocks
 
-# Import OSM data handling functions (these need to be implemented)
-# from syngrid.data_processor.data.osm import osm_data_extraction
 
 
 def main():
@@ -78,10 +76,28 @@ def main():
 
     # 1.7: Extract OSM data for the region
     logger.info("1.7: Extracting OpenStreetMap data")
-    # TODO: Implement OSM data handler class and use it here
-    # osm_handler = OSMDataHandler(fips_dict, output_dir=output_dir)
-    # osm_data = osm_handler.process(boundary_gdf=region_data['boundary'])
-
+    osm_data = None
+    
+    osm_handler = OSMDataHandler(
+        fips_dict,
+        osm_pbf_file=input_file_paths['osm_pbf_file'],
+        output_dir=output_dir
+    )
+    # Use extract_by_bbox to extract data directly using the region boundary
+    if region_data['boundary'] is not None and not region_data['boundary'].empty:
+        logger.info("Extracting OSM data using region boundary")
+        osm_data = osm_handler.extract_by_bbox(region_data['boundary'])
+    else:
+        # Fall back to processing the entire PBF file
+        logger.info("No region boundary available. Extracting all OSM data from PBF file.")
+        osm_data = osm_handler.process()
+    
+    if osm_data:
+        if osm_data['buildings'] is not None:
+            logger.info(f"Extracted {len(osm_data['buildings'])} OSM buildings")
+        if osm_data['pois'] is not None:
+            logger.info(f"Extracted {len(osm_data['pois'])} OSM POIs")
+   
     # 1.8: Clip all datasets to the region boundary
     logger.info("1.8: Clipping all datasets to region boundary")
     # Note: Now handled within each data handler's process method
