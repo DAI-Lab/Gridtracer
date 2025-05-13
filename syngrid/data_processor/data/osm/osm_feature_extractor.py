@@ -85,20 +85,20 @@ def extract_osm_features(polygon, fips_region=None, output_dir=None, save_files=
             "leisure": True,
             "office": True
         })
-        
+
         if not pois.empty:
             results['pois'] = pois
             logger.info(f"POIs found: {len(pois)}")
-            
+
             if save_files:
                 # Split POIs by geometry type to avoid shapefile errors
                 geometry_types = pois.geometry.type.unique()
                 logger.info(f"POI geometry types: {', '.join(geometry_types)}")
-                
+
                 for geom_type in geometry_types:
                     type_suffix = geom_type.lower()
                     type_pois = pois[pois.geometry.type == geom_type]
-                    
+
                     if not type_pois.empty:
                         pois_file = output_dir / f"pois_{type_suffix}.shp"
                         try:
@@ -116,7 +116,7 @@ def extract_osm_features(polygon, fips_region=None, output_dir=None, save_files=
     # 3. Extract Power Infrastructure (transformers, substations, poles)
     try:
         logger.info("Extracting power infrastructure from OSM")
-        
+
         # Create a comprehensive power infrastructure tag dictionary based on the Overpass query
         power_tags = {
             "power": [
@@ -125,16 +125,16 @@ def extract_osm_features(polygon, fips_region=None, output_dir=None, save_files=
                 "pole"                 # Poles that may have transformers
             ]
         }
-        
+
         # This will extract all features matching any of the power types
         power_features = ox.features_from_polygon(polygon, tags=power_tags)
-        
+
         # Further filter to match the Overpass query criteria
         # - Exclude abandoned transformers/substations
         # - Include distribution transformer poles
         if not power_features.empty:
             logger.info(f"Found {len(power_features)} power features before filtering")
-            
+
             # Filter out abandoned infrastructure
             try:
                 # Filter out abandoned infrastructure
@@ -143,32 +143,32 @@ def extract_osm_features(polygon, fips_region=None, output_dir=None, save_files=
                     & (power_features.get('abandoned:substation', '') != 'yes')
                     & (power_features.get('abandoned:building', '') != 'transformer')
                 )
-                
+
                 # For poles, keep only those with distribution transformers
                 poles_mask = (
                     (power_features['power'] == 'pole')
                     & (power_features.get('transformer', '') == 'distribution')
                 )
-                
+
                 # Combine masks: keep non-abandoned infrastructure and poles with transformers
                 if 'power' in power_features.columns:
                     transformers_mask = power_features['power'].isin(['transformer', 'substation'])
                     final_mask = (transformers_mask & abandoned_mask) | poles_mask
                     power_features = power_features[final_mask]
-                
+
                 logger.info(f"Power features after filtering: {len(power_features)}")
-                
+
                 results['power'] = power_features
-                
+
                 # Split by geometry type like we did for POIs
                 if save_files and not power_features.empty:
                     geometry_types = power_features.geometry.type.unique()
                     logger.info(f"Power geometry types: {', '.join(geometry_types)}")
-                    
+
                     for geom_type in geometry_types:
                         type_suffix = geom_type.lower()
                         type_power = power_features[power_features.geometry.type == geom_type]
-                        
+
                         if not type_power.empty:
                             power_file = output_dir / f"power_{type_suffix}.shp"
                             try:
@@ -191,14 +191,14 @@ def extract_osm_features(polygon, fips_region=None, output_dir=None, save_files=
                 "No power infrastructure features found in the specified area"
             )
             results['power'] = None
-        
+
     except Exception as e:
         logger.error(f"Error extracting power infrastructure: {str(e)}")
         results['power'] = None
 
     if save_files:
         logger.info(f"All features saved to {output_dir}")
-    
+
     return results
 
 
@@ -229,7 +229,7 @@ if __name__ == "__main__":
     # Print results - TODO: remove
     buildings_count = len(results['buildings']) if results['buildings'] is not None else 0
     pois_count = len(results['pois']) if results['pois'] is not None else 0
-    
+
     print(f"Buildings: {buildings_count} features")
     print(f"POIs: {pois_count} features")
     if results['power'] is not None and not results['power'].empty:
