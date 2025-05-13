@@ -361,10 +361,10 @@ class Road_network_builder(DataHandler):
 
         Returns:
             Dictionary containing results of the network building process:
-                - nodes: GeoDataFrame of nodes
                 - edges: GeoDataFrame of edges
                 - sql_file: Path to the generated SQL file
-                - raw_edges_file: Path to the raw edges CSV file
+                - geojson_file: Path to the network GeoJSON file
+                - visualization_file: Path to the network visualization
         """
         # Override config with parameters
         if osm_pbf_file:
@@ -384,7 +384,8 @@ class Road_network_builder(DataHandler):
             'nodes': None,
             'edges': None,
             'sql_file': None,
-            'raw_edges_file': None
+            'geojson_file': None,
+            'visualization_file': None
         }
 
         if not osm_pbf_file:
@@ -397,9 +398,8 @@ class Road_network_builder(DataHandler):
             # Set up boundary filter if provided
             bbox = None
             if boundary_gdf is not None and not boundary_gdf.empty:
-                # Get the bounding box of the boundary
+                # Get the geometry from the boundary
                 bbox = boundary_gdf.geometry.iloc[0]
-                logger.info(f"Using boundary filter with bbox: {bbox}")
 
             # Initialize OSM with bounding box filter if available
             osm = OSM(osm_pbf_file, bounding_box=bbox)
@@ -416,29 +416,30 @@ class Road_network_builder(DataHandler):
                     # Check CRS compatibility
                     if boundary_gdf.crs != edges_gdf.crs:
                         boundary_gdf = boundary_gdf.to_crs(edges_gdf.crs)
-
+                    
                     # Get the unified boundary polygon
                     if len(boundary_gdf) > 1:
                         boundary_poly = boundary_gdf.unary_union
                     else:
                         boundary_poly = boundary_gdf.iloc[0].geometry
-
+                    
                     # Clip edges to the exact boundary
                     edges_gdf = gpd.clip(edges_gdf, boundary_poly)
                     logger.info(f"After exact boundary clipping: {len(edges_gdf)} edges remain")
                 except Exception as e:
                     logger.error(f"Error during exact boundary clipping: {e}")
 
-            # Save raw edges for reference
-            raw_edges_csv_path = output_dir / "raw_osm_network_edges.csv"
+            # Export road network to a single GeoJSON file
+            geojson_path = output_dir / "road_network.geojson"
             try:
-                edges_gdf.to_csv(raw_edges_csv_path, index=False)
-                logger.info(f"Saved raw network edges to {raw_edges_csv_path}")
-                results['raw_edges_file'] = raw_edges_csv_path
+                # Save to GeoJSON
+                edges_gdf.to_file(geojson_path, driver='GeoJSON')
+                logger.info(f"Saved road network to GeoJSON: {geojson_path}")
+                results['geojson_file'] = geojson_path
             except Exception as e:
-                logger.error(f"Error saving raw network edges to CSV: {e}")
+                logger.error(f"Error exporting network to GeoJSON: {e}")
 
-            # Process the edges
+            # Process the edges for SQL
             insert_value_tuples = self._process_and_write_edges(edges_gdf, "ALL_DATA")
 
             # Generate SQL file
@@ -471,9 +472,25 @@ class Road_network_builder(DataHandler):
             except IOError as e:
                 logger.error(f"Error writing full SQL file {output_sql_file}: {e}")
 
-            # Store the nodes and edges in results
-            results['nodes'] = nodes
+            # Store the edges in results
             results['edges'] = edges_gdf
+
+            # Create a simple visualization of the road network using the exported GeoJSON
+            try:
+                from syngrid.data_processor.utils.utils import visualize_road_network
+                
+                viz_file = visualize_road_network(
+                    network_data=geojson_path,
+                    boundary_gdf=boundary_gdf,
+                    output_dir=output_dir,
+                    title=f"Road Network - {network_type}"
+                )
+                
+                if viz_file:
+                    logger.info(f"Road network visualization created: {viz_file}")
+                    results['visualization_file'] = viz_file
+            except Exception as e:
+                logger.error(f"Error creating road network visualization: {e}")
 
             logger.info(f"Processing finished. Output generated in: {output_dir}")
 
@@ -501,7 +518,11 @@ class Road_network_builder(DataHandler):
                 If provided, the network will be clipped to this boundary
 
         Returns:
-            dict: Dictionary containing processed data and file paths
+            dict: Dictionary containing processed data and file paths:
+                - edges: GeoDataFrame of network edges
+                - sql_file: Path to the generated SQL file
+                - geojson_file: Path to the network GeoJSON file
+                - visualization_file: Path to the network visualization
         """
         # Get OSM PBF file from config
         osm_pbf_file = self.config.get('osm_pbf_file')
