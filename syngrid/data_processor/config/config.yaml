@@ -15,11 +15,6 @@ region:
 output_dir: "syngrid/data_processor/output/"  
   
 input_data:
-
-  # Census data paths
-  census_population: "ZensusPopulation/ZensusPopulation.shp" # TODO: Add path to census population data
-  census_buildings: "ZensusGebaude/ZensusGebaude.shp" # TODO: Add path to census buildings data
-  
   
   # OSM PBF file path
   # Download from https://download.geofabrik.de/ or similar source
@@ -30,6 +25,11 @@ input_data:
   
   # NLCD landuse data path
   nlcd_landuse: "/Users/magic-rabbit/Documents/MA-data/nlcd_2023.tif"
+  
+  # Census data paths
+  census_population: "ZensusPopulation/ZensusPopulation.shp" # TODO: Add path to census population data
+  census_buildings: "ZensusGebaude/ZensusGebaude.shp" # TODO: Add path to census buildings data
+  
 
 # Overpass API configuration
 overpass:

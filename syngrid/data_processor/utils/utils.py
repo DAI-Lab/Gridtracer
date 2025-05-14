@@ -246,12 +246,12 @@ def visualize_blocks(blocks_gdf, subdivision_gdf=None, output_dir=None, fips_dic
 
 
 def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
-                       plot_buildings=True, plot_pois=True, plot_power=True):
+                       plot_buildings=True, plot_pois=True, plot_power=True, plot_landuse=False):
     """
-    Visualize OpenStreetMap data (buildings, POIs, and power infrastructure).
+    Visualize OpenStreetMap data (buildings, POIs, power infrastructure, and land use).
 
-    This function finds the GeoJSON files for buildings, POIs, and power
-    infrastructure in the OSM output directory based on the provided FIPS codes,
+    This function finds the GeoJSON files for buildings, POIs, power
+    infrastructure, and land use in the OSM output directory based on the provided FIPS codes,
     then plots them together on a map.
 
     Args:
@@ -262,6 +262,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
         plot_buildings (bool, optional): Whether to plot buildings. Default: True
         plot_pois (bool, optional): Whether to plot POIs. Default: True
         plot_power (bool, optional): Whether to plot power infrastructure. Default: True
+        plot_landuse (bool, optional): Whether to plot land use data. Default: False
 
     Returns:
         str: Path to the saved plot file
@@ -302,6 +303,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
     buildings_gdf = None
     pois_gdf = None
     power_gdf = None
+    landuse_gdf = None
 
     if buildings_file.exists():
         logger.info(f"Loading buildings from {buildings_file}")
@@ -320,9 +322,17 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
         power_gdf = gpd.read_file(power_file)
     else:
         logger.warning(f"Power file not found: {power_file}")
+        
+    # Add land use data loading
+    landuse_file = osm_data_dir / "landuse.geojson"
+    if plot_landuse and landuse_file.exists():
+        logger.info(f"Loading land use data from {landuse_file}")
+        landuse_gdf = gpd.read_file(landuse_file)
+    elif plot_landuse:
+        logger.warning(f"Land use file not found: {landuse_file}")
 
     # Check if any data was loaded
-    if buildings_gdf is None and pois_gdf is None and power_gdf is None:
+    if buildings_gdf is None and pois_gdf is None and power_gdf is None and landuse_gdf is None:
         logger.error("No OSM data found to visualize")
         return None
 
@@ -364,6 +374,58 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
     bounds = None
 
     # Convert data to Web Mercator for basemap compatibility and plot
+    
+    # Plot land use data first (as a background layer)
+    if plot_landuse and landuse_gdf is not None and not landuse_gdf.empty:
+        try:
+            landuse_mercator = landuse_gdf.to_crs(epsg=3857)
+            
+            # Define a color map for land use categories
+            category_colors = {
+                'Agriculture': 'yellowgreen',
+                'Natural': 'darkgreen',
+                'Developed': 'lightgray',
+                'Leisure': 'lightgreen',
+                'Amenity': 'khaki',
+                'Transportation': 'silver',
+                'Other': 'white'
+            }
+            
+            # If the category field exists, use it for coloring
+            if 'category' in landuse_mercator.columns:
+                # Plot each category with its own color
+                for category, color in category_colors.items():
+                    category_data = landuse_mercator[landuse_mercator['category'] == category]
+                    if not category_data.empty:
+                        category_data.plot(
+                            ax=ax,
+                            color=color,
+                            alpha=0.5,
+                            label=f"Land Use: {category}"
+                        )
+            else:
+                # Just plot all land use polygons with a single color
+                landuse_mercator.plot(
+                    ax=ax,
+                    color='lightblue',
+                    alpha=0.3,
+                    label='Land Use'
+                )
+            
+            if bounds is None:
+                bounds = list(landuse_mercator.total_bounds)
+            else:
+                lu_bounds = landuse_mercator.total_bounds
+                bounds[0] = min(bounds[0], lu_bounds[0])
+                bounds[1] = min(bounds[1], lu_bounds[1])
+                bounds[2] = max(bounds[2], lu_bounds[2])
+                bounds[3] = max(bounds[3], lu_bounds[3])
+                
+            logger.info(f"Added {len(landuse_gdf)} land use polygons to plot")
+        except Exception as e:
+            logger.error(f"Error plotting land use data: {e}")
+    
+    # Plot buildings (now on top of land use)
     if plot_buildings and buildings_gdf is not None and not buildings_gdf.empty:
         try:
             buildings_mercator = buildings_gdf.to_crs(epsg=3857)
@@ -422,7 +484,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
             # First, check if 'power' column exists
             if 'power' in power_gdf.columns:
                 # Plot transformers
-                transformers = power_mercator[power_mercator['power'] == 'transformer']
+                transformers = power_mercator[power_gdf['power'] == 'transformer']
                 if not transformers.empty:
                     transformers.plot(
                         ax=ax,
@@ -435,7 +497,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                     )
 
                 # Plot substations
-                substations = power_mercator[power_mercator['power'] == 'substation']
+                substations = power_mercator[power_gdf['power'] == 'substation']
                 if not substations.empty:
                     substations.plot(
                         ax=ax,
@@ -448,7 +510,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                     )
 
                 # Plot poles
-                poles = power_mercator[power_mercator['power'] == 'pole']
+                poles = power_mercator[power_gdf['power'] == 'pole']
                 if not poles.empty:
                     poles.plot(
                         ax=ax,
