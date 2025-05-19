@@ -322,7 +322,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
         power_gdf = gpd.read_file(power_file)
     else:
         logger.warning(f"Power file not found: {power_file}")
-        
+
     # Add land use data loading
     landuse_file = osm_data_dir / "landuse.geojson"
     if plot_landuse and landuse_file.exists():
@@ -374,12 +374,12 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
     bounds = None
 
     # Convert data to Web Mercator for basemap compatibility and plot
-    
+
     # Plot land use data first (as a background layer)
     if plot_landuse and landuse_gdf is not None and not landuse_gdf.empty:
         try:
             landuse_mercator = landuse_gdf.to_crs(epsg=3857)
-            
+
             # Define a color map for land use categories
             category_colors = {
                 'Agriculture': 'yellowgreen',
@@ -390,7 +390,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                 'Transportation': 'silver',
                 'Other': 'white'
             }
-            
+
             # If the category field exists, use it for coloring
             if 'category' in landuse_mercator.columns:
                 # Plot each category with its own color
@@ -411,7 +411,7 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                     alpha=0.3,
                     label='Land Use'
                 )
-            
+
             if bounds is None:
                 bounds = list(landuse_mercator.total_bounds)
             else:
@@ -420,11 +420,11 @@ def visualize_osm_data(fips_dict, boundary_gdf=None, output_dir=None,
                 bounds[1] = min(bounds[1], lu_bounds[1])
                 bounds[2] = max(bounds[2], lu_bounds[2])
                 bounds[3] = max(bounds[3], lu_bounds[3])
-                
+
             logger.info(f"Added {len(landuse_gdf)} land use polygons to plot")
         except Exception as e:
             logger.error(f"Error plotting land use data: {e}")
-    
+
     # Plot buildings (now on top of land use)
     if plot_buildings and buildings_gdf is not None and not buildings_gdf.empty:
         try:
@@ -662,37 +662,38 @@ def visualize_road_network(network_data, boundary_gdf=None, output_dir=None, tit
     Returns:
         str: Path to the saved plot file
     """
-    import matplotlib.pyplot as plt
-    import contextily as ctx
     from pathlib import Path
+
+    import contextily as ctx
+    import matplotlib.pyplot as plt
     import pandas as pd
-    
+
     # Set up output directory
     if output_dir is None:
         output_dir = Path("syngrid/data_processor/output/plots")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Load network data if it's a file path
     if isinstance(network_data, (str, Path)):
         logger.info(f"Loading network from: {network_data}")
         network_gdf = gpd.read_file(network_data)
     else:
         network_gdf = network_data
-    
+
     if network_gdf is None or network_gdf.empty:
         logger.error("No network data to visualize")
         return None
-    
+
     # Create figure and axis
     fig, ax = plt.subplots(figsize=(12, 12))
-    
+
     # Convert to Web Mercator for basemap compatibility
     network_mercator = network_gdf.to_crs(epsg=3857)
-    
+
     # Plot network
     network_mercator.plot(ax=ax, color='blue', linewidth=0.8)
-    
+
     # Add boundary if provided
     if boundary_gdf is not None and not boundary_gdf.empty:
         boundary_mercator = boundary_gdf.to_crs(epsg=3857)
@@ -703,10 +704,10 @@ def visualize_road_network(network_data, boundary_gdf=None, output_dir=None, tit
             linewidth=2.0,
             linestyle='--'
         )
-    
+
     # Get bounds for the map
-    bounds = list(network_mercator.total_bounds)
-    
+    list(network_mercator.total_bounds)
+
     # Add basemap
     try:
         ctx.add_basemap(
@@ -717,16 +718,16 @@ def visualize_road_network(network_data, boundary_gdf=None, output_dir=None, tit
         )
     except Exception as e:
         logger.warning(f"Could not add basemap: {e}")
-    
+
     # Set title and remove axes
     plt.title(title, fontsize=16)
     ax.set_axis_off()
-    
+
     # Save the plot
-    timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
     output_file = output_dir / f"road_network.png"
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     plt.close()
-    
+
     logger.info(f"Road network visualization saved to: {output_file}")
     return str(output_file)

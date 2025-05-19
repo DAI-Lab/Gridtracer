@@ -1,10 +1,3 @@
-"""
-Census data handler for SynGrid.
-
-This module provides functionality to download and process US Census TIGER data
-including boundaries (state, county, subdivision) and census blocks.
-"""
-
 import logging
 from pathlib import Path
 

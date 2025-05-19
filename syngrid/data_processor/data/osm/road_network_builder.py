@@ -416,13 +416,13 @@ class Road_network_builder(DataHandler):
                     # Check CRS compatibility
                     if boundary_gdf.crs != edges_gdf.crs:
                         boundary_gdf = boundary_gdf.to_crs(edges_gdf.crs)
-                    
+
                     # Get the unified boundary polygon
                     if len(boundary_gdf) > 1:
                         boundary_poly = boundary_gdf.unary_union
                     else:
                         boundary_poly = boundary_gdf.iloc[0].geometry
-                    
+
                     # Clip edges to the exact boundary
                     edges_gdf = gpd.clip(edges_gdf, boundary_poly)
                     logger.info(f"After exact boundary clipping: {len(edges_gdf)} edges remain")
@@ -478,14 +478,14 @@ class Road_network_builder(DataHandler):
             # Create a simple visualization of the road network using the exported GeoJSON
             try:
                 from syngrid.data_processor.utils.utils import visualize_road_network
-                
+
                 viz_file = visualize_road_network(
                     network_data=geojson_path,
                     boundary_gdf=boundary_gdf,
                     output_dir=output_dir,
                     title=f"Road Network - {network_type}"
                 )
-                
+
                 if viz_file:
                     logger.info(f"Road network visualization created: {viz_file}")
                     results['visualization_file'] = viz_file

@@ -423,10 +423,10 @@ class OSMDataHandler(DataHandler):
     def extract_landuse(self, boundary_gdf=None):
         """
         Extract land use polygons from OpenStreetMap.
-        
+
         Args:
             boundary_gdf (GeoDataFrame, optional): Boundary to extract landuse for
-            
+
         Returns:
             tuple: (GeoDataFrame of landuse, Path to saved file)
         """
@@ -435,128 +435,128 @@ class OSMDataHandler(DataHandler):
             if boundary_gdf is not None and not boundary_gdf.empty:
                 if not self.set_boundary(boundary_gdf):
                     return None, None
-                
+
             # Ensure we have a boundary polygon
             if self.boundary_polygon is None:
                 logger.error("No boundary polygon available for extraction")
                 return None, None
-            
+
             logger.info("Extracting land use data using OSMnx with Overpass API")
-            
+
             # Define land use tags by categories
             landuse_tags = {
                 # Agriculture
                 "landuse": [
                     # Agriculture
-                    "allotments", "aquaculture", "farmland", "farmyard", 
-                    "greenhouse_horticulture", "meadow", "orchard", "plant_nursery", 
+                    "allotments", "aquaculture", "farmland", "farmyard",
+                    "greenhouse_horticulture", "meadow", "orchard", "plant_nursery",
                     "vineyard",
-                    
+
                     # Developed areas
-                    "brownfield", "cemetery", "commercial", "construction", 
+                    "brownfield", "cemetery", "commercial", "construction",
                     "garages", "industrial", "landfill", "military", "quarry",
                     "railway", "religious", "residential", "retail", "salt_pond",
-                    
+
                     # Natural/Recreational
                     "grass", "forest", "recreation_ground", "village_green"
                 ],
-                
+
                 # Natural features (often used for land use/cover)
                 "natural": [
                     "wood", "grassland", "heath", "scrub", "wetland", "water"
                 ],
-                
+
                 # Leisure areas
                 "leisure": [
-                    "garden", "park", "nature_reserve", "golf_course", 
+                    "garden", "park", "nature_reserve", "golf_course",
                     "stadium", "pitch", "playground"
                 ],
-                
+
                 # Amenities that indicate land use
                 "amenity": [
-                    "school", "university", "college", "hospital", 
+                    "school", "university", "college", "hospital",
                     "grave_yard", "place_of_worship", "parking"
                 ],
-                
+
                 # Water-related
                 "water": True,
-                
+
                 # Transportation
                 "aeroway": ["aerodrome"],
                 "highway": ["pedestrian", "services"]
             }
-            
+
             # Extract land use features using OSMnx
             landuse_gdf = ox.features.features_from_polygon(
                 polygon=self.boundary_polygon,
                 tags=landuse_tags
             )
-            
+
             if landuse_gdf is None or landuse_gdf.empty:
                 logger.warning("No land use data found in OpenStreetMap")
                 return None, None
-            
+
             logger.info(f"Successfully extracted {len(landuse_gdf)} land use polygons")
-            
+
             # Add a category field for easier classification
             def determine_category(tags):
                 # Convert feature attributes to a dictionary
                 if isinstance(tags, dict):
                     tag_dict = tags
                 else:
-                    tag_dict = {col: tags.get(col) for col in landuse_tags.keys() 
-                               if col in tags and tags.get(col)}
-                
+                    tag_dict = {col: tags.get(col) for col in landuse_tags.keys()
+                                if col in tags and tags.get(col)}
+
                 # Check in order of priority
-                if tag_dict.get('landuse') in ['farmland', 'farmyard', 'allotments', 
-                                              'aquaculture', 'meadow', 'orchard', 
-                                              'plant_nursery', 'vineyard', 'greenhouse_horticulture']:
+                if tag_dict.get('landuse') in ['farmland', 'farmyard', 'allotments',
+                                               'aquaculture', 'meadow', 'orchard',
+                                               'plant_nursery', 'vineyard', 'greenhouse_horticulture']:
                     return "Agriculture"
-                    
-                elif tag_dict.get('landuse') in ['residential', 'commercial', 'industrial', 
-                                                'retail', 'construction', 'brownfield', 
-                                                'landfill', 'quarry', 'military', 'garages']:
+
+                elif tag_dict.get('landuse') in ['residential', 'commercial', 'industrial',
+                                                 'retail', 'construction', 'brownfield',
+                                                 'landfill', 'quarry', 'military', 'garages']:
                     return "Developed"
-                    
-                elif tag_dict.get('natural') in ['wood', 'water', 'grassland', 
-                                                'wetland', 'scrub', 'heath']:
+
+                elif tag_dict.get('natural') in ['wood', 'water', 'grassland',
+                                                 'wetland', 'scrub', 'heath']:
                     return "Natural"
-                    
+
                 elif tag_dict.get('leisure') or tag_dict.get('landuse') in ['recreation_ground', 'village_green']:
                     return "Leisure"
-                    
+
                 elif tag_dict.get('amenity'):
                     return "Amenity"
-                    
+
                 elif tag_dict.get('aeroway') or tag_dict.get('highway') in ['pedestrian', 'services']:
                     return "Transportation"
-                    
+
                 elif tag_dict.get('landuse') == 'forest':
                     # Could be either natural or production forestry - check for additional tags
                     if tag_dict.get('managed') == 'yes' or tag_dict.get('forestry') == 'yes':
                         return "Agriculture"
                     else:
                         return "Natural"
-                        
+
                 return "Other"
-                    
+
             # In OSMnx, tags are in columns, need to reconstruct them
             landuse_gdf['tags'] = landuse_gdf.apply(
-                lambda row: {col: row[col] for col in row.index if col not in 
-                            ['geometry', 'element_type', 'osmid', 'tags']},
+                lambda row: {col: row[col] for col in row.index if col not in
+                             ['geometry', 'element_type', 'osmid', 'tags']},
                 axis=1
             )
-            
+
             # Add a category field based on the tags
             landuse_gdf['category'] = landuse_gdf['tags'].apply(determine_category)
-            
+
             # Save land use data
             landuse_filepath = self.dataset_output_dir / "landuse.geojson"
             landuse_gdf.to_file(landuse_filepath, driver="GeoJSON")
             logger.info(f"Saved land use data to {landuse_filepath}")
-            
+
             return landuse_gdf, landuse_filepath
-            
+
         except Exception as e:
             logger.error(f"Error extracting land use data: {e}")
             logger.error(traceback.format_exc())
@@ -622,7 +622,7 @@ class OSMDataHandler(DataHandler):
         except Exception as e:
             logger.error(f"Error extracting land use data: {e}")
             logger.error(traceback.format_exc())
-        
+
         return results
 
     def process(self, boundary_gdf=None):
