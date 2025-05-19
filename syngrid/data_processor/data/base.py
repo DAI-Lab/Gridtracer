@@ -212,3 +212,25 @@ class DataHandler(ABC):
         Returns:
             dict: Dictionary containing processed data and file paths
         """
+
+    def get_base_output_dir(self) -> Path:
+        """
+        Get the standardized output directory path up to (but not including) the dataset name.
+
+        Returns:
+            Path: Path object to the base output directory (state/county/subdivision)
+        """
+        state = self.fips_dict.get('state', 'unknown')
+        county = self.fips_dict.get('county', 'unknown')
+        subdivision = self.fips_dict.get('subdivision')
+
+        state_dir = state.replace(' ', '_')
+        county_dir = county.replace(' ', '_')
+
+        output_path = self.output_dir / state_dir / county_dir
+
+        if subdivision:
+            subdivision_dir = subdivision.replace(' ', '_')
+            output_path = output_path / subdivision_dir
+
+        return output_path

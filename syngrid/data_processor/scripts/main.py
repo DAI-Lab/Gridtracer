@@ -8,8 +8,10 @@
 
 from syngrid.data_processor.config import ConfigLoader
 from syngrid.data_processor.data import CensusDataHandler, NRELDataHandler, OSMDataHandler
+from syngrid.data_processor.data.census_pl import CensusPLDataHandler
 from syngrid.data_processor.data.osm.road_network_builder import Road_network_builder
-from syngrid.data_processor.utils import logger, lookup_fips_codes, visualize_blocks, visualize_osm_data
+from syngrid.data_processor.utils import (
+    logger, lookup_fips_codes, visualize_blocks, visualize_osm_data,)
 
 
 def main():
@@ -35,29 +37,36 @@ def main():
     census_handler = CensusDataHandler(fips_dict, output_dir=output_dir)
     region_data = census_handler.process()
 
-    # # 1.4: Visualize the region's census blocks
-    # logger.info("1.4: Visualizing census blocks")
-    # # Create visualization title
-    # title = None
-    # if region_data['subdivision'] is not None and not region_data['subdivision'].empty:
-    #     # For subdivision
-    #     subdiv_name = region_data['subdivision'].iloc[0]['NAME']
-    #     title = f"Census Blocks in {subdiv_name}"
-    # else:
-    #     # For county
-    #     title = f"Census Blocks in {fips_dict['county']}, {fips_dict['state']}"
+    # 1.3.1: Process Census PL 94-171 population and housing data
+    logger.info("1.3.1: Processing Census PL 94-171 population and housing data")
+    pl_data_handler = CensusPLDataHandler(fips_dict, output_dir=output_dir)
+    population_data = pl_data_handler.process(boundary_gdf=region_data['boundary'])
+    # Add the population data to the region data
+    region_data['population'] = population_data
 
-    # # Generate and log visualization
-    # if region_data['blocks'] is not None and not region_data['blocks'].empty:
-    #     plot_file = visualize_blocks(
-    #         blocks_gdf=region_data['blocks'],
-    #         subdivision_gdf=region_data['subdivision'],
-    #         fips_dict=fips_dict,
-    #         title=title
-    #     )
-    #     logger.info(f"Generated visualization: {plot_file}")
+    # 1.4: Visualize the region's census blocks
+    logger.info("1.4: Visualizing census blocks")
+    # Create visualization title
+    title = None
+    if region_data['subdivision'] is not None and not region_data['subdivision'].empty:
+        # For subdivision
+        subdiv_name = region_data['subdivision'].iloc[0]['NAME']
+        title = f"Census Blocks in {subdiv_name}"
+    else:
+        # For county
+        title = f"Census Blocks in {fips_dict['county']}, {fips_dict['state']}"
 
-    # logger.info(f"Region boundary: {region_data['boundary']}")
+    # Generate and log visualization
+    if region_data['blocks'] is not None and not region_data['blocks'].empty:
+        plot_file = visualize_blocks(
+            blocks_gdf=region_data['blocks'],
+            subdivision_gdf=region_data['subdivision'],
+            fips_dict=fips_dict,
+            title=title
+        )
+        logger.info(f"Generated visualization: {plot_file}")
+
+    logger.info(f"Region boundary: {region_data['boundary']}")
 
     # 1.5: Download and process NREL data for the region
     logger.info("1.5: Processing NREL data")
@@ -77,12 +86,12 @@ def main():
 
     # 1.7: Extract OSM data for the region
     logger.info("1.7: Extracting OpenStreetMap data")
-    
+
     osm_handler = OSMDataHandler(
         fips_dict,
         output_dir=output_dir
     )
-    
+
     # Process OSM data with the region boundary for efficient extraction
     if region_data['boundary'] is not None and not region_data['boundary'].empty:
         logger.info("Extracting OSM data using exact boundary polygon via OSMnx")
@@ -92,7 +101,7 @@ def main():
         logger.error("No region boundary available. OSMnx extraction requires a boundary polygon.")
         logger.error("Please ensure a valid region boundary is available.")
         osm_data = None
-    
+
     if osm_data:
         if osm_data['buildings'] is not None:
             logger.info(f"Extracted {len(osm_data['buildings'])} OSM buildings")
@@ -104,17 +113,17 @@ def main():
         if osm_data['landuse'] is not None:
             logger.info(f"Extracted {len(osm_data['landuse'])} land use polygons")
             logger.info(f"Land use data saved to: {osm_data['landuse_filepath']}")
-            
+
             # Optional: Log the distribution of land use categories
             if 'category' in osm_data['landuse'].columns:
                 category_counts = osm_data['landuse']['category'].value_counts()
                 logger.info("Land use categories distribution:")
                 for category, count in category_counts.items():
                     logger.info(f"  - {category}: {count} polygons")
-            
+
         # 1.7.1: Visualize the OSM data
         logger.info("1.7.1: Visualizing OpenStreetMap data")
-        
+
         # First, create a visualization with all data elements
         osm_plot_file = visualize_osm_data(
             fips_dict=fips_dict,
@@ -126,7 +135,7 @@ def main():
         )
         if osm_plot_file:
             logger.info(f"Generated complete OSM data visualization: {osm_plot_file}")
-        
+
         # Then create a visualization without POIs for clarity
         osm_plot_no_pois = visualize_osm_data(
             fips_dict=fips_dict,
@@ -138,7 +147,7 @@ def main():
         )
         if osm_plot_no_pois:
             logger.info(f"Generated OSM visualization without POIs: {osm_plot_no_pois}")
-   
+
         # Create a visualization with land use if available
         if osm_data.get('landuse') is not None:
             logger.info("Creating visualization with land use data")
