@@ -335,8 +335,6 @@ class OSMDataHandler(DataHandler):
             relevant_tags = set([
                 "element",
                 "id",
-                "access",
-                "addr:city",
                 "addr:housenumber",
                 "addr:postcode",
                 "addr:street",
@@ -344,9 +342,7 @@ class OSMDataHandler(DataHandler):
                 "leisure",
                 "name",
                 "operator",
-                "note",
                 "amenity",
-                "capacity",
                 "office",
                 "building:levels",
                 "building:material",
@@ -389,10 +385,7 @@ class OSMDataHandler(DataHandler):
                 "government",
                 "telecom",
                 "military",
-                "massgis:school_id",
                 "type",
-                "isced:level",
-                "social_centre:for",
                 "building:units",
                 "building:part",
                 "min_height",
@@ -415,6 +408,7 @@ class OSMDataHandler(DataHandler):
                 tags={"building": True},
             )
             raw_buildings_filepath = self.dataset_output_dir / "raw" / "raw_buildings.geojson"
+            raw_buildings_filepath.parent.mkdir(parents=True, exist_ok=True)
             buildings.to_file(raw_buildings_filepath, driver="GeoJSON")
 
             # Filter the GeoDataFrame to keep only relevant columns
