@@ -414,6 +414,8 @@ class OSMDataHandler(DataHandler):
                 polygon=self.boundary_polygon,
                 tags={"building": True},
             )
+            raw_buildings_filepath = self.dataset_output_dir / "raw" / "raw_buildings.geojson"
+            buildings.to_file(raw_buildings_filepath, driver="GeoJSON")
 
             # Filter the GeoDataFrame to keep only relevant columns
             columns_to_keep = ['geometry']  # Always keep geometry
@@ -487,7 +489,7 @@ class OSMDataHandler(DataHandler):
             }
             # Properties to keep
             poi_keep_tags = set([
-                "name", "amenity", "shop", "tourism", "leisure", "office",
+                "id", "name", "amenity", "shop", "tourism", "leisure", "office",
                 "building", "building:use", "landuse", "man_made", "industrial",
                 "craft", "public_transport", "operator:type", "government", "military",
                 "description", "addr:street", "addr:housenumber", "addr:city", "name:en"
@@ -498,6 +500,10 @@ class OSMDataHandler(DataHandler):
                 polygon=self.boundary_polygon,
                 tags=poi_tags,
             )
+            raw_pois_filepath = self.dataset_output_dir / "raw" / "raw_pois.geojson"
+            # create the raw directory if it doesn't exist
+            raw_pois_filepath.parent.mkdir(parents=True, exist_ok=True)
+            pois.to_file(raw_pois_filepath, driver="GeoJSON")
 
             if pois is None or pois.empty:
                 logger.warning("No POIs found in OpenStreetMap")
@@ -511,7 +517,7 @@ class OSMDataHandler(DataHandler):
             for col in pois.columns:
                 if col in poi_keep_tags and col not in columns_to_keep:
                     columns_to_keep.append(col)
-            
+
             pois = pois[columns_to_keep]
 
             logger.info(f"Successfully extracted {len(pois)} POIs with OSMnx")
@@ -558,6 +564,8 @@ class OSMDataHandler(DataHandler):
                 polygon=self.boundary_polygon,
                 tags={"landuse": True},
             )
+            raw_landuse_filepath = self.dataset_output_dir / "raw" / "raw_landuse.geojson"
+            landuse_gdf.to_file(raw_landuse_filepath, driver="GeoJSON")
 
             # Filter the GeoDataFrame to keep only relevant columns
             columns_to_keep = ['geometry']  # Always keep geometry

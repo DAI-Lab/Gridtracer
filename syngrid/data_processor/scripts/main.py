@@ -8,7 +8,6 @@
 
 from syngrid.data_processor.config import ConfigLoader
 from syngrid.data_processor.data import CensusDataHandler, NRELDataHandler, OSMDataHandler
-from syngrid.data_processor.data.census_pl import CensusPLDataHandler
 from syngrid.data_processor.data.osm.road_network_builder import Road_network_builder
 from syngrid.data_processor.utils import (
     logger, lookup_fips_codes, visualize_blocks, visualize_osm_data,)
