@@ -37,12 +37,12 @@ def main():
     census_handler = CensusDataHandler(fips_dict, output_dir=output_dir)
     region_data = census_handler.process()
 
-    # 1.3.1: Process Census PL 94-171 population and housing data
-    logger.info("1.3.1: Processing Census PL 94-171 population and housing data")
-    pl_data_handler = CensusPLDataHandler(fips_dict, output_dir=output_dir)
-    population_data = pl_data_handler.process(boundary_gdf=region_data['boundary'])
-    # Add the population data to the region data
-    region_data['population'] = population_data
+    # # 1.3.1: Process Census PL 94-171 population and housing data
+    # logger.info("1.3.1: Processing Census PL 94-171 population and housing data")
+    # pl_data_handler = CensusPLDataHandler(fips_dict, output_dir=output_dir)
+    # population_data = pl_data_handler.process(boundary_gdf=region_data['boundary'])
+    # # Add the population data to the region data
+    # region_data['population'] = population_data
 
     # 1.4: Visualize the region's census blocks
     logger.info("1.4: Visualizing census blocks")

@@ -80,7 +80,9 @@ class OSMDataHandler(DataHandler):
             # For safety with the Overpass API, simplify the polygon if it's very complex
             if len(self.boundary_polygon.exterior.coords) > 1000:
                 logger.info(
-                    f"Complex polygon with {len(self.boundary_polygon.exterior.coords)} points, simplifying...")
+                    f"Complex polygon with {len(self.boundary_polygon.exterior.coords)} points, "
+                    "simplifying..."
+                )
                 self.boundary_polygon = self.boundary_polygon.simplify(
                     0.0001)  # ~10m simplification
 
@@ -330,15 +332,103 @@ class OSMDataHandler(DataHandler):
 
             logger.info("Extracting buildings using OSMnx with Overpass API")
 
-            # Extract buildings using OSMnx's current API
+            relevant_tags = set([
+                "element",
+                "id",
+                "access",
+                "addr:city",
+                "addr:housenumber",
+                "addr:postcode",
+                "addr:street",
+                "building",
+                "leisure",
+                "name",
+                "operator",
+                "note",
+                "amenity",
+                "capacity",
+                "office",
+                "building:levels",
+                "building:material",
+                "height",
+                "location",
+                "roof:shape",
+                "year_of_construction",
+                "building:colour",
+                "roof:colour",
+                "roof:material",
+                "name:en",
+                "roof:levels",
+                "operator:type",
+                "description",
+                "air_conditioning",
+                "check_date",
+                "architect:renovation",
+                "building:levels:underground",
+                "renovation_date",
+                "parking",
+                "shop",
+                "man_made",
+                "construction_date",
+                "heritage",
+                "heritage:operator",
+                "ref:nrhp",
+                "university",
+                "landuse",
+                "material",
+                "historic",
+                "building:architecture",
+                "building:levels:roof",
+                "max_level",
+                "building:flats",
+                "building:use",
+                "source:height",
+                "social_facility:for",
+                "rooms",
+                "level",
+                "government",
+                "telecom",
+                "military",
+                "massgis:school_id",
+                "type",
+                "isced:level",
+                "social_centre:for",
+                "building:units",
+                "building:part",
+                "min_height",
+                "plant:method",
+                "plant:output:electricity",
+                "plant:output:hot_water",
+                "plant:source",
+                "building:min_level",
+                "construction:building:levels",
+                "construction",
+                "renovation",
+                "house",
+                "maxheight",
+                "building:floor"
+            ])
+
+            # Extract only buildings with the tags you care about
             buildings = ox.features.features_from_polygon(
                 polygon=self.boundary_polygon,
-                tags={"building": True}
+                tags={"building": True},
             )
 
-            if buildings is None or buildings.empty:
-                logger.warning("No buildings found in OpenStreetMap")
-                return None, None
+            # Filter the GeoDataFrame to keep only relevant columns
+            columns_to_keep = ['geometry']  # Always keep geometry
+            if 'osmid' in buildings.columns:  # Keep osmid if present
+                columns_to_keep.append('osmid')
+
+            for col in buildings.columns:
+                if col in relevant_tags and col not in columns_to_keep:
+                    columns_to_keep.append(col)
+
+            buildings = buildings[columns_to_keep]
+
+            logger.info(f"Extracted {len(buildings)} buildings within the boundary.")
+            buildings_filepath = self.dataset_output_dir / "buildings.geojson"
+            buildings.to_file(buildings_filepath, driver="GeoJSON")
 
             extraction_time = time.time() - start_time
             logger.info(
@@ -395,16 +485,34 @@ class OSMDataHandler(DataHandler):
                 "leisure": True,
                 "office": True
             }
+            # Properties to keep
+            poi_keep_tags = set([
+                "name", "amenity", "shop", "tourism", "leisure", "office",
+                "building", "building:use", "landuse", "man_made", "industrial",
+                "craft", "public_transport", "operator:type", "government", "military",
+                "description", "addr:street", "addr:housenumber", "addr:city", "name:en"
+            ])
 
             # Extract POIs using OSMnx's current API
             pois = ox.features.features_from_polygon(
                 polygon=self.boundary_polygon,
-                tags=poi_tags
+                tags=poi_tags,
             )
 
             if pois is None or pois.empty:
                 logger.warning("No POIs found in OpenStreetMap")
                 return None, None
+
+            # Filter the GeoDataFrame to keep only relevant columns
+            columns_to_keep = ['geometry']  # Always keep geometry
+            if 'osmid' in pois.columns:  # Keep osmid if present
+                columns_to_keep.append('osmid')
+
+            for col in pois.columns:
+                if col in poi_keep_tags and col not in columns_to_keep:
+                    columns_to_keep.append(col)
+            
+            pois = pois[columns_to_keep]
 
             logger.info(f"Successfully extracted {len(pois)} POIs with OSMnx")
 
@@ -422,13 +530,11 @@ class OSMDataHandler(DataHandler):
 
     def extract_landuse(self, boundary_gdf=None):
         """
-        Extract land use polygons from OpenStreetMap.
-
-        Args:
-            boundary_gdf (GeoDataFrame, optional): Boundary to extract landuse for
+        Extract land use polygons and classify them as residential, industrial, or public.
+        All other landuse types are ignored.
 
         Returns:
-            tuple: (GeoDataFrame of landuse, Path to saved file)
+            tuple: (GeoDataFrame of filtered landuse, Path to saved file)
         """
         try:
             # Set boundary if provided
@@ -436,121 +542,72 @@ class OSMDataHandler(DataHandler):
                 if not self.set_boundary(boundary_gdf):
                     return None, None
 
-            # Ensure we have a boundary polygon
             if self.boundary_polygon is None:
                 logger.error("No boundary polygon available for extraction")
                 return None, None
 
             logger.info("Extracting land use data using OSMnx with Overpass API")
 
-            # Define land use tags by categories
-            landuse_tags = {
-                # Agriculture
-                "landuse": [
-                    # Agriculture
-                    "allotments", "aquaculture", "farmland", "farmyard",
-                    "greenhouse_horticulture", "meadow", "orchard", "plant_nursery",
-                    "vineyard",
+            relevant_tags = set([
+                "landuse",
+                "name"
+            ])
 
-                    # Developed areas
-                    "brownfield", "cemetery", "commercial", "construction",
-                    "garages", "industrial", "landfill", "military", "quarry",
-                    "railway", "religious", "residential", "retail", "salt_pond",
-
-                    # Natural/Recreational
-                    "grass", "forest", "recreation_ground", "village_green"
-                ],
-
-                # Natural features (often used for land use/cover)
-                "natural": [
-                    "wood", "grassland", "heath", "scrub", "wetland", "water"
-                ],
-
-                # Leisure areas
-                "leisure": [
-                    "garden", "park", "nature_reserve", "golf_course",
-                    "stadium", "pitch", "playground"
-                ],
-
-                # Amenities that indicate land use
-                "amenity": [
-                    "school", "university", "college", "hospital",
-                    "grave_yard", "place_of_worship", "parking"
-                ],
-
-                # Water-related
-                "water": True,
-
-                # Transportation
-                "aeroway": ["aerodrome"],
-                "highway": ["pedestrian", "services"]
-            }
-
-            # Extract land use features using OSMnx
+            # Only extract landuse
             landuse_gdf = ox.features.features_from_polygon(
                 polygon=self.boundary_polygon,
-                tags=landuse_tags
+                tags={"landuse": True},
             )
+
+            # Filter the GeoDataFrame to keep only relevant columns
+            columns_to_keep = ['geometry']  # Always keep geometry
+            if 'osmid' in landuse_gdf.columns:  # Keep osmid if present
+                columns_to_keep.append('osmid')
+
+            for col in landuse_gdf.columns:
+                if col in relevant_tags and col not in columns_to_keep:
+                    columns_to_keep.append(col)
+
+            landuse_gdf = landuse_gdf[columns_to_keep]
 
             if landuse_gdf is None or landuse_gdf.empty:
                 logger.warning("No land use data found in OpenStreetMap")
                 return None, None
 
-            logger.info(f"Successfully extracted {len(landuse_gdf)} land use polygons")
+            logger.info(f"Extracted {len(landuse_gdf)} total landuse features")
 
-            # Add a category field for easier classification
-            def determine_category(tags):
-                # Convert feature attributes to a dictionary
-                if isinstance(tags, dict):
-                    tag_dict = tags
-                else:
-                    tag_dict = {col: tags.get(col) for col in landuse_tags.keys()
-                                if col in tags and tags.get(col)}
+            # Define your simplified classification mapping
+            landuse_categories = {
+                "residential": "residential",
+                "retail": "industrial",
+                "commercial": "industrial",
+                "industrial": "industrial",
+                "garages": "industrial",
+                "construction": "industrial",
+                "brownfield": "industrial",
+                "railway": "industrial",
+                "landfill": "industrial",
+                "quarry": "industrial",
+                "military": "public",
+                "religious": "public",
+                "cemetery": "public",
+                "education": "public",
+                "school": "public",
+                "college": "public",
+                "university": "public",
+                "hospital": "public",
+                "institutional": "public"
+            }
 
-                # Check in order of priority
-                if tag_dict.get('landuse') in ['farmland', 'farmyard', 'allotments',
-                                               'aquaculture', 'meadow', 'orchard',
-                                               'plant_nursery', 'vineyard', 'greenhouse_horticulture']:
-                    return "Agriculture"
+            # Filter only relevant values
+            landuse_gdf = landuse_gdf[
+                landuse_gdf["landuse"].isin(landuse_categories.keys())
+            ].copy()
+            landuse_gdf["category"] = landuse_gdf["landuse"].map(landuse_categories)
 
-                elif tag_dict.get('landuse') in ['residential', 'commercial', 'industrial',
-                                                 'retail', 'construction', 'brownfield',
-                                                 'landfill', 'quarry', 'military', 'garages']:
-                    return "Developed"
+            logger.info(f"Filtered down to {len(landuse_gdf)} categorized landuse polygons")
 
-                elif tag_dict.get('natural') in ['wood', 'water', 'grassland',
-                                                 'wetland', 'scrub', 'heath']:
-                    return "Natural"
-
-                elif tag_dict.get('leisure') or tag_dict.get('landuse') in ['recreation_ground', 'village_green']:
-                    return "Leisure"
-
-                elif tag_dict.get('amenity'):
-                    return "Amenity"
-
-                elif tag_dict.get('aeroway') or tag_dict.get('highway') in ['pedestrian', 'services']:
-                    return "Transportation"
-
-                elif tag_dict.get('landuse') == 'forest':
-                    # Could be either natural or production forestry - check for additional tags
-                    if tag_dict.get('managed') == 'yes' or tag_dict.get('forestry') == 'yes':
-                        return "Agriculture"
-                    else:
-                        return "Natural"
-
-                return "Other"
-
-            # In OSMnx, tags are in columns, need to reconstruct them
-            landuse_gdf['tags'] = landuse_gdf.apply(
-                lambda row: {col: row[col] for col in row.index if col not in
-                             ['geometry', 'element_type', 'osmid', 'tags']},
-                axis=1
-            )
-
-            # Add a category field based on the tags
-            landuse_gdf['category'] = landuse_gdf['tags'].apply(determine_category)
-
-            # Save land use data
+            # Save file
             landuse_filepath = self.dataset_output_dir / "landuse.geojson"
             landuse_gdf.to_file(landuse_filepath, driver="GeoJSON")
             logger.info(f"Saved land use data to {landuse_filepath}")
