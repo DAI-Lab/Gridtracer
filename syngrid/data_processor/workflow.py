@@ -3,7 +3,7 @@ import logging
 import os
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 
 import geopandas as gpd
 import pandas as pd
@@ -16,8 +16,8 @@ ALL_DATASETS: List[str] = [
     "NREL",
     "OSM",
     "STREET_NETWORK",
-    "PLOTS", 
-    "TMP" 
+    "PLOTS",
+    "TMP"
 ]
 
 
@@ -41,7 +41,6 @@ class WorkflowOrchestrator:
         self.config_loader: ConfigLoader = ConfigLoader(config_path)
         self.base_output_dir: Path = self.config_loader.get_output_dir()
 
-
         self.fips_dict: Optional[Dict[str, str]] = None
         self.region_boundary_gdf: Optional[gpd.GeoDataFrame] = None
         self.is_county_subdivision: bool = False
@@ -58,8 +57,6 @@ class WorkflowOrchestrator:
         self.logger.info(
             f"Orchestrator initialized. Subdivision scope: {self.is_county_subdivision}"
         )
-
-
 
     def _resolve_fips_codes(self) -> None:
         """
@@ -80,15 +77,16 @@ class WorkflowOrchestrator:
             raise ValueError(
                 "State, county, and lookup_url must be provided in config for FIPS lookup."
             )
-        
+
         filename = os.path.basename(lookup_url)
-        local_file_path = self.base_output_dir / filename 
+        local_file_path = self.base_output_dir / filename
         self.logger.info(f"Local file path: {local_file_path}")
 
         if not local_file_path.exists():
-            self.logger.info(f"Downloading FIPS lookup file from {lookup_url} to {local_file_path}")
+            self.logger.info(
+                f"Downloading FIPS lookup file from {lookup_url} to {local_file_path}")
             try:
-                urllib.request.urlretrieve(lookup_url, local_file_path) # type: ignore
+                urllib.request.urlretrieve(lookup_url, local_file_path)  # type: ignore
                 self.logger.debug(f"FIPS lookup file saved to {local_file_path}")
             except Exception as e:
                 self.logger.error(f"Failed to download FIPS lookup file: {e}")
@@ -101,15 +99,15 @@ class WorkflowOrchestrator:
                 reader = csv.reader(infile)
                 processed_rows = []
                 for i, row in enumerate(reader):
-                    if i == 0 or (row and row[0] == 'STATE'): # Skip header
+                    if i == 0 or (row and row[0] == 'STATE'):  # Skip header
                         continue
                     if len(row) == 7:
                         processed_rows.append(row)
-                    elif len(row) == 8: # Handle known inconsistency in some files
+                    elif len(row) == 8:  # Handle known inconsistency in some files
                         merged_row = row[:5] + [row[5] + ' ' + row[6]] + [row[7]]
                         processed_rows.append(merged_row)
-            
-            column_names = ['state_abbr', 'state_fips', 'county_fips', 'county_name', 
+
+            column_names = ['state_abbr', 'state_fips', 'county_fips', 'county_name',
                             'subdivision_fips', 'subdivision_name', 'funcstat']
             df = pd.DataFrame(processed_rows, columns=column_names)
 
@@ -123,11 +121,11 @@ class WorkflowOrchestrator:
 
             county_data = county_matches.iloc[0]
             self.fips_dict = {
-                'state': state, 
+                'state': state,
                 'state_fips': county_data['state_fips'],
-                'county': county, 
+                'county': county,
                 'county_fips': county_data['county_fips'],
-                'subdivision': None, 
+                'subdivision': None,
                 'subdivision_fips': None,
                 'funcstat': None
             }
@@ -139,16 +137,15 @@ class WorkflowOrchestrator:
                         f"Subdivision '{subdivision}' not found in county '{county}', state '{state}'."
                     )
                 subdiv_data = subdiv_match.iloc[0]
-                self.fips_dict['subdivision'] = subdivision 
+                self.fips_dict['subdivision'] = subdivision
                 self.fips_dict['subdivision_fips'] = subdiv_data['subdivision_fips']
                 self.fips_dict['funcstat'] = subdiv_data['funcstat']
-            
+
             self.logger.info(f"FIPS codes resolved: {self.fips_dict}")
 
         except Exception as e:
             self.logger.error(f"Error processing FIPS lookup file: {e}")
             raise ValueError(f"Failed to lookup FIPS codes: {e}")
-
 
     def _create_output_directories(self) -> None:
         """
@@ -184,12 +181,11 @@ class WorkflowOrchestrator:
             dataset_path.mkdir(parents=True, exist_ok=True)
             self.logger.debug(f"Ensured dataset directory exists: {dataset_path}")
 
-
     def get_fips_dict(self) -> Optional[Dict[str, str]]:
         """Return the FIPS dictionary for the current region."""
         return self.fips_dict
 
-    def get_base_output_directory(self) -> Path: # Renamed getter
+    def get_base_output_directory(self) -> Path:  # Renamed getter
         """Return the Path object for the current regional base output directory (e.g., .../State/County/[Subdivision]/)."""
         if not self.base_output_dir:
             self.logger.error("Regional base output directory accessed before initialization.")
@@ -209,16 +205,14 @@ class WorkflowOrchestrator:
         Raises:
             ValueError: If the dataset_name is not recognized or base_output_dir is not set.
         """
-        if not self.base_output_dir:
-            self.logger.error("Cannot get dataset specific directory: Regional base output dir not set.")
-            raise ValueError("Regional base output directory is not initialized.")
+
         if dataset_name not in ALL_DATASETS:
-            self.logger.error(f"Dataset '{dataset_name}' is not a recognized dataset in ALL_DATASETS.")
-            # Optionally, you could decide to create it on-the-fly here,
-            # but pre-creation is generally safer for expected datasets.
-            raise ValueError(f"Unknown dataset name: {dataset_name}. Must be one of {ALL_DATASETS}")
-        
-        dataset_dir = self.base_output_dir / dataset_name
+            self.logger.error(
+                f"Dataset '{dataset_name}' is not a recognized dataset in ALL_DATASETS.")
+            raise ValueError(
+                f"Unknown dataset name: {dataset_name}. Must be one of {ALL_DATASETS}")
+
+        dataset_dir = self.regional_base_output_dir / dataset_name
         # Ensure it exists, though it should have been created during initialization
         dataset_dir.mkdir(parents=True, exist_ok=True)
         return dataset_dir
@@ -237,21 +231,21 @@ class WorkflowOrchestrator:
         Raises:
             RuntimeError: If the output directory has not been initialized.
         """
-        self.logger.warning("get_path_in_output_dir is deprecated. Use get_dataset_specific_output_directory().joinpath() instead.")
-        if not self.regional_base_output_dir: # Check renamed attribute
+        self.logger.warning(
+            "get_path_in_output_dir is deprecated. Use get_dataset_specific_output_directory().joinpath() instead.")
+        if not self.regional_base_output_dir:  # Check renamed attribute
             self.logger.error("Output directory accessed before initialization.")
             raise RuntimeError("Output directory has not been initialized.")
-        return self.regional_base_output_dir.joinpath(*path_segments) # Use renamed attribute
-    
+        return self.regional_base_output_dir.joinpath(*path_segments)  # Use renamed attribute
+
     def get_region_config(self) -> Dict[str, Any]:
         """Return the raw region configuration dictionary."""
         return self.config_loader.get_region()
 
-
     def get_input_data_paths(self) -> Dict[str, Any]:
         """Return the configured input data paths."""
         return self.config_loader.get_input_data_paths()
-    
+
     def get_overpass_config(self) -> Dict[str, Any]:
         """Get Overpass API configuration."""
         return self.config_loader.get_overpass_config()
@@ -284,4 +278,3 @@ class WorkflowOrchestrator:
             self.logger.error("Attempted to access region boundary before it was set.")
             raise ValueError("Region boundary has not been set yet. Process census data first.")
         return self.region_boundary_gdf
-
