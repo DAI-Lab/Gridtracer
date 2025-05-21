@@ -1,6 +1,6 @@
 import logging
 import os
-
+from pathlib import Path
 import yaml
 
 
@@ -82,7 +82,7 @@ class ConfigLoader:
         Returns:
             str: Output directory path
         """
-        return self.config.get('output_dir', 'syngrid/data_processor/output/')
+        return Path(self.config.get('output_dir', 'syngrid/data_processor/output/'))
 
     def get_output_path(self, filename=None):
         """
