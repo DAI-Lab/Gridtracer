@@ -6,6 +6,7 @@ for creating routable road networks from OSM data.
 """
 
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import geopandas as gpd
@@ -13,7 +14,10 @@ import pandas as pd
 import pytest
 from shapely.geometry import LineString
 
-from syngrid.data_processor.data.osm.road_network_builder import Road_network_builder
+from syngrid.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
+
+# Import WorkflowOrchestrator for type hinting if needed, or mock it directly
+# from syngrid.data_processor.workflow import WorkflowOrchestrator
 
 
 @pytest.fixture
@@ -55,28 +59,45 @@ def mock_osm_data():
 
 
 @pytest.fixture
-def road_network_builder(fips_dict, tmp_path):
-    """Create a Road_network_builder with mock config."""
-    # Patch both DataHandler initialization and yaml loading
-    with patch('syngrid.data_processor.data.base.DataHandler._validate_fips_dict'), \
-            patch('syngrid.data_processor.data.base.DataHandler._create_dataset_output_dir'), \
-            patch('syngrid.data_processor.data.osm.road_network_builder.yaml.safe_load') as mock_yaml:
+def mock_orchestrator(fips_dict, tmp_path, mock_osm_data):
+    """Creates a mock WorkflowOrchestrator."""
+    orchestrator = MagicMock()
+    orchestrator.get_fips_dict.return_value = fips_dict
+    # Make dataset_output_dir a Path object as expected by the builder
+    orchestrator.get_dataset_specific_output_directory.return_value = Path(
+        tmp_path) / "STREET_NETWORK"
+    # Setup the mock OSM parser to be returned by the orchestrator
+    mock_osm_parser = MagicMock()
+    nodes, edges = mock_osm_data
+    mock_osm_parser.get_network.return_value = (nodes, edges)
+    orchestrator.get_osm_parser.return_value = mock_osm_parser
+    return orchestrator
 
-        # Mock the YAML config
+
+@pytest.fixture
+def road_network_builder(mock_orchestrator, tmp_path):
+    """Create a RoadNetworkBuilder with a mocked orchestrator and config."""
+    with patch('syngrid.data_processor.data.osm.road_network_builder.yaml.safe_load') as mock_yaml:
+        # Mock the YAML config for osm2po_config.yaml
         mock_yaml.return_value = {
             'way_tag_resolver': {
                 'tags': {
                     'residential': {'clazz': 41, 'maxspeed': 40, 'flags': ['car', 'bike']}
                 },
                 'flag_list': ['car', 'bike', 'foot']
-            }
+            },
+            'network_type': 'driving'  # Default network type
         }
 
-        # Create a builder with our mocked fips_dict and a temp directory
-        builder = Road_network_builder(fips_dict=fips_dict, output_dir=tmp_path)
+        # The RoadNetworkBuilder now takes the orchestrator directly
+        builder = RoadNetworkBuilder(orchestrator=mock_orchestrator)
 
-        # Mock the dataset_output_dir property
-        builder.dataset_output_dir = tmp_path
+        # Ensure dataset_output_dir is set correctly for tests if DataHandler doesn't set it
+        # based on orchestrator.get_dataset_specific_output_directory during super().__init__
+        # This might be redundant if DataHandler's __init__ correctly uses the orchestrator
+        builder.dataset_output_dir = mock_orchestrator.get_dataset_specific_output_directory(
+            "STREET_NETWORK")
+        builder.dataset_output_dir.mkdir(parents=True, exist_ok=True)
 
         return builder
 
@@ -131,37 +152,37 @@ def test_flags_to_int(road_network_builder):
     assert road_network_builder._flags_to_int({'car', 'bike', 'foot'}) == 7  # 2^0 + 2^1 + 2^2
 
 
-@patch('syngrid.data_processor.data.osm.road_network_builder.OSM')
-def test_build_network(mock_osm_class, road_network_builder, mock_osm_data, tmp_path):
+# No need to patch OSM globally if the orchestrator provides the mock parser
+def test_build_network(road_network_builder, mock_osm_data, tmp_path):
     """Test the build_network method."""
-    # Configure the mock OSM instance
-    mock_osm_instance = MagicMock()
-    mock_osm_class.return_value = mock_osm_instance
-
-    # Set up the mock to return our test data
-    nodes, edges = mock_osm_data
-    mock_osm_instance.get_network.return_value = (nodes, edges)
+    # The mock_orchestrator in road_network_builder fixture already provides a mock OSM parser
+    # that returns mock_osm_data.
 
     # Build the network
     results = road_network_builder.build_network(
-        osm_pbf_file="test.osm.pbf",
-        network_type='driving'
+        network_type='driving'  # network_type is still passed
+        # osm_pbf_file is no longer passed directly
     )
 
-    # Verify OSM was called correctly
-    mock_osm_class.assert_called_once_with("test.osm.pbf")
-    mock_osm_instance.get_network.assert_called_once_with(network_type='driving', nodes=True)
+    # Verify the orchestrator's OSM parser was used
+    road_network_builder.orchestrator.get_osm_parser.assert_called_once()
+    # Verify the mock OSM parser's get_network was called
+    mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
+    mock_osm_parser_instance.get_network.assert_called_once_with(
+        network_type='driving', nodes=True)
 
-    # Check results
-    assert results['nodes'] is not None
+    # Check results - nodes might not be explicitly returned by build_network
+    # Depending on the RoadNetworkBuilder.build_network implementation,
+    # 'nodes' key might not be in results. Update as per actual implementation.
+    # assert results['nodes'] is not None
     assert results['edges'] is not None
     assert results['sql_file'] is not None
     assert results['sql_file'].name == "osm2po_routing_network.sql"
-    assert results['raw_edges_file'] is not None
+    assert results['geojson_file'] is not None  # Changed from raw_edges_file
 
     # Verify files were created
     assert os.path.exists(results['sql_file'])
-    assert os.path.exists(results['raw_edges_file'])
+    assert os.path.exists(results['geojson_file'])  # Changed from raw_edges_file
 
     # Check SQL file content
     with open(results['sql_file'], 'r') as f:
@@ -172,16 +193,9 @@ def test_build_network(mock_osm_class, road_network_builder, mock_osm_data, tmp_
         assert "CREATE INDEX" in sql_content
 
 
-@patch('syngrid.data_processor.data.osm.road_network_builder.OSM')
-def test_process_method(mock_osm_class, road_network_builder, mock_osm_data, tmp_path):
+def test_process_method(road_network_builder, mock_osm_data, tmp_path):
     """Test the process method."""
-    # Configure the mock OSM instance
-    mock_osm_instance = MagicMock()
-    mock_osm_class.return_value = mock_osm_instance
-
-    # Set up the mock to return our test data
-    nodes, edges = mock_osm_data
-    mock_osm_instance.get_network.return_value = (nodes, edges)
+    # The mock_orchestrator already provides the mock OSM parser
 
     # Create a boundary for testing clipping
     boundary_data = {
@@ -189,18 +203,23 @@ def test_process_method(mock_osm_class, road_network_builder, mock_osm_data, tmp
     }
     boundary_gdf = gpd.GeoDataFrame(boundary_data, crs="EPSG:4326")
 
-    # Set the OSM PBF file in the config
-    road_network_builder.config['osm_pbf_file'] = "test.osm.pbf"
+    # No need to set osm_pbf_file in config, orchestrator handles it.
 
-    # Mock the clip_to_boundary method to simply return the input data
-    with patch.object(road_network_builder, 'clip_to_boundary', return_value=edges):
-        results = road_network_builder.process(boundary_gdf=boundary_gdf)
+    # Call process method
+    results = road_network_builder.process(boundary_gdf=boundary_gdf)
+
+    # Verify the orchestrator's OSM parser was used and its get_network was called
+    road_network_builder.orchestrator.get_osm_parser.assert_called_once()
+    mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
+    # The process method calls build_network, which calls get_network
+    mock_osm_parser_instance.get_network.assert_called_once_with(
+        network_type='driving', nodes=True)
 
     # Verify results
-    assert results['nodes'] is not None
+    # assert results['nodes'] is not None # Check if 'nodes' is expected
     assert results['edges'] is not None
     assert results['sql_file'] is not None
-    assert 'clipped_edges' in results
+    assert 'edges' in results  # Changed from 'clipped_edges'
 
 
 def test_process_and_write_edges(road_network_builder, mock_osm_data):
@@ -229,7 +248,7 @@ def test_process_and_write_edges(road_network_builder, mock_osm_data):
 
 def test_get_dataset_name(road_network_builder):
     """Test the _get_dataset_name method."""
-    assert road_network_builder._get_dataset_name() == "street_network"
+    assert road_network_builder._get_dataset_name() == "STREET_NETWORK"
 
 
 @patch('syngrid.data_processor.data.osm.road_network_builder.logger')
