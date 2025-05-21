@@ -6,16 +6,18 @@ data to create a PostgreSQL/PostGIS compatible SQL file for pgRouting.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 import geopandas as gpd
 import pandas as pd
 import yaml
-from pyrosm import OSM
 from shapely.wkb import dumps as wkb_dumps
 from tqdm import tqdm
 
 from syngrid.data_processor.data.base import DataHandler
+
+if TYPE_CHECKING:
+    from syngrid.data_processor.workflow import WorkflowOrchestrator
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -64,7 +66,7 @@ ANALYZE public_2po_4pgr;
 """
 
 
-class Road_network_builder(DataHandler):
+class RoadNetworkBuilder(DataHandler):
     """
     Class for building a routable road network from OSM data.
 
@@ -73,28 +75,20 @@ class Road_network_builder(DataHandler):
     """
 
     def __init__(
-        self,
-        fips_dict,
-        output_dir=None,
-        config_file: Optional[str] = None,
-        osm_pbf_file: Optional[str] = None
-    ):
+            self,
+            orchestrator: 'WorkflowOrchestrator',
+            config_file: Optional[str] = None):
         """
         Initialize the road network builder.
 
         Args:
-            fips_dict (dict): Dictionary containing region information
-            output_dir (str or Path, optional): Base output directory
+            orchestrator (WorkflowOrchestrator): The workflow orchestrator instance.
             config_file (str, optional): Path to the YAML configuration file
-            osm_pbf_file (str, optional): Path to the OSM PBF file
         """
-        super().__init__(fips_dict, output_dir)
+        super().__init__(orchestrator)
+        self.orchestrator = orchestrator  # Store orchestrator if needed, or ensure DataHandler does
         self.config_file = config_file or 'syngrid/data_processor/data/osm/osm2po_config.yaml'
         self.config = self._load_config()
-
-        # Set OSM PBF file path if provided
-        if osm_pbf_file:
-            self.config['osm_pbf_file'] = osm_pbf_file
 
     def _get_dataset_name(self):
         """
@@ -103,7 +97,7 @@ class Road_network_builder(DataHandler):
         Returns:
             str: Dataset name
         """
-        return "street_network"
+        return "STREET_NETWORK"
 
     def _load_config(self) -> Dict[str, Any]:
         """
@@ -347,15 +341,14 @@ class Road_network_builder(DataHandler):
 
     def build_network(
         self,
-        osm_pbf_file: Optional[str] = None,
         network_type: str = 'driving',
-        boundary_gdf: Optional[gpd.GeoDataFrame] = None
+        boundary_gdf: Optional[gpd.GeoDataFrame] = None,
+        plot: bool = False
     ) -> Dict[str, Any]:
         """
         Build a routable road network from OSM data.
 
         Args:
-            osm_pbf_file: Path to the OSM PBF file.
             network_type: Type of network to extract (e.g., 'driving', 'walking', 'cycling').
             boundary_gdf: GeoDataFrame containing the boundary polygon for clipping.
 
@@ -366,20 +359,6 @@ class Road_network_builder(DataHandler):
                 - geojson_file: Path to the network GeoJSON file
                 - visualization_file: Path to the network visualization
         """
-        # Override config with parameters
-        if osm_pbf_file:
-            self.config['osm_pbf_file'] = osm_pbf_file
-        if network_type:
-            self.config['network_type'] = network_type
-
-        # Get the OSM PBF file from config
-        osm_pbf_file = self.config.get('osm_pbf_file')
-
-        # Use the dataset_output_dir from DataHandler
-        output_dir = self.dataset_output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Results dictionary
         results = {
             'nodes': None,
             'edges': None,
@@ -388,49 +367,23 @@ class Road_network_builder(DataHandler):
             'visualization_file': None
         }
 
-        if not osm_pbf_file:
-            logger.error("No OSM PBF file provided")
+        osm = self.orchestrator.get_osm_parser()
+        if osm is None:
+            logger.error(
+                "OSM parser not available from orchestrator. Cannot build road network."
+            )
             return results
 
-        # Main execution logic
-        logger.info(f"Loading OSM data from: {osm_pbf_file}")
         try:
-            # Set up boundary filter if provided
-            bbox = None
-            if boundary_gdf is not None and not boundary_gdf.empty:
-                # Get the geometry from the boundary
-                bbox = boundary_gdf.geometry.iloc[0]
-
-            # Initialize OSM with bounding box filter if available
-            osm = OSM(osm_pbf_file, bounding_box=bbox)
-
-            # Extract the network
-            logger.info(f"Extracting network with bounding box: {bbox}")
+            logger.info(
+                f"Extracting network using pre-initialized OSM parser. Network type: {network_type}")
             nodes, edges_gdf = osm.get_network(network_type=network_type, nodes=True)
+            if plot:
+                edges_gdf.plot()
             logger.info(f"Loaded {len(nodes)} nodes and {len(edges_gdf)} total edges.")
 
-            # Further clip to exact boundary shape if provided
-            if boundary_gdf is not None and not boundary_gdf.empty and not edges_gdf.empty:
-                logger.info("Further clipping network to exact boundary shape...")
-                try:
-                    # Check CRS compatibility
-                    if boundary_gdf.crs != edges_gdf.crs:
-                        boundary_gdf = boundary_gdf.to_crs(edges_gdf.crs)
-
-                    # Get the unified boundary polygon
-                    if len(boundary_gdf) > 1:
-                        boundary_poly = boundary_gdf.unary_union
-                    else:
-                        boundary_poly = boundary_gdf.iloc[0].geometry
-
-                    # Clip edges to the exact boundary
-                    edges_gdf = gpd.clip(edges_gdf, boundary_poly)
-                    logger.info(f"After exact boundary clipping: {len(edges_gdf)} edges remain")
-                except Exception as e:
-                    logger.error(f"Error during exact boundary clipping: {e}")
-
             # Export road network to a single GeoJSON file
-            geojson_path = output_dir / "road_network.geojson"
+            geojson_path = self.dataset_output_dir / "road_network.geojson"
             try:
                 # Save to GeoJSON
                 edges_gdf.to_file(geojson_path, driver='GeoJSON')
@@ -462,7 +415,7 @@ class Road_network_builder(DataHandler):
 
             full_sql_content.append(INDEX_SQL)
 
-            output_sql_file = output_dir / "osm2po_routing_network.sql"
+            output_sql_file = self.dataset_output_dir / "osm2po_routing_network.sql"
             try:
                 with open(output_sql_file, "w", encoding="utf-8") as f:
                     # Add some spacing between main SQL sections
@@ -482,7 +435,7 @@ class Road_network_builder(DataHandler):
                 viz_file = visualize_road_network(
                     network_data=geojson_path,
                     boundary_gdf=boundary_gdf,
-                    output_dir=output_dir,
+                    output_dir=self.dataset_output_dir,
                     title=f"Road Network - {network_type}"
                 )
 
@@ -492,7 +445,7 @@ class Road_network_builder(DataHandler):
             except Exception as e:
                 logger.error(f"Error creating road network visualization: {e}")
 
-            logger.info(f"Processing finished. Output generated in: {output_dir}")
+            logger.info(f"Processing finished. Output generated in: {self.dataset_output_dir}")
 
         except Exception as e:
             logger.error(f"Error building road network: {e}")
@@ -506,7 +459,7 @@ class Road_network_builder(DataHandler):
         """
         raise NotImplementedError("Data downloading not implemented for this class")
 
-    def process(self, boundary_gdf=None):
+    def process(self, boundary_gdf=None, plot=False):
         """
         Process the data for the region.
 
@@ -524,15 +477,13 @@ class Road_network_builder(DataHandler):
                 - geojson_file: Path to the network GeoJSON file
                 - visualization_file: Path to the network visualization
         """
-        # Get OSM PBF file from config
-        osm_pbf_file = self.config.get('osm_pbf_file')
         network_type = self.config.get('network_type', 'driving')
 
         # Build the network with boundary clipping during initial loading
         results = self.build_network(
-            osm_pbf_file=osm_pbf_file,
             network_type=network_type,
-            boundary_gdf=boundary_gdf
+            boundary_gdf=boundary_gdf,
+            plot=plot
         )
 
         return results

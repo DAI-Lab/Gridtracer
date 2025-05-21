@@ -113,11 +113,14 @@ class NRELDataHandler(DataHandler):
                 # More efficient way to count lines for tqdm progress bar
                 with open(self.input_file_path, 'r') as f_count:
                     total_lines = sum(1 for _ in f_count) - 1  # -1 for header
-                if total_lines < 0: total_lines = 0 # Handle empty or header-only file
+                if total_lines < 0:
+                    total_lines = 0  # Handle empty or header-only file
                 total_chunks = (total_lines // chunk_size) + \
                     (1 if total_lines % chunk_size > 0 and total_lines > 0 else 0)
             except Exception:  # Fallback if line counting fails
-                self.logger.warning("Could not determine total lines for NREL progress bar.", exc_info=True)
+                self.logger.warning(
+                    "Could not determine total lines for NREL progress bar.",
+                    exc_info=True)
                 total_chunks = None  # tqdm will run without a total
 
             with tqdm(total=total_chunks, desc=f"Processing NREL for {region_name_for_log}", unit="chunk") as pbar:
@@ -135,18 +138,18 @@ class NRELDataHandler(DataHandler):
 
                     # KISS filtering logic based on your previous working snippet
                     county_ids_no_g = chunk['in.county'].astype(str).str.removeprefix('G')
-                    
+
                     # Pandas Series boolean conditions for filtering
                     # Ensure string is long enough before slicing
                     state_match = pd.Series(False, index=county_ids_no_g.index)
                     valid_for_state_slice = county_ids_no_g.str.len() >= 2
                     state_match[valid_for_state_slice] = county_ids_no_g[valid_for_state_slice].str[:2] == str_state_fips
-                    
+
                     county_match = pd.Series(False, index=county_ids_no_g.index)
                     # Need at least 6 characters for slice [3:6] (e.g., SSXCCC)
-                    valid_for_county_slice = county_ids_no_g.str.len() >= 6 
+                    valid_for_county_slice = county_ids_no_g.str.len() >= 6
                     county_match[valid_for_county_slice] = county_ids_no_g[valid_for_county_slice].str[3:6] == str_county_fips
-                    
+
                     county_chunk = chunk[state_match & county_match]
 
                     if not county_chunk.empty:
@@ -201,7 +204,6 @@ class NRELDataHandler(DataHandler):
                 - 'csv_path': Path to the CSV file for the target region.
                 - 'data': Pandas DataFrame with the NREL data if successfully loaded.
         """
-
 
         fips = self.orchestrator.get_fips_dict()
         if not fips:  # Redundant if base class validated, but safe

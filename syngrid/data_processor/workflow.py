@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 import geopandas as gpd
 import pandas as pd
+from pyrosm import OSM
+from shapely.geometry import MultiPolygon, Polygon
 
 from syngrid.data_processor.config import ConfigLoader
 
@@ -44,6 +46,7 @@ class WorkflowOrchestrator:
         self.fips_dict: Optional[Dict[str, str]] = None
         self.region_boundary_gdf: Optional[gpd.GeoDataFrame] = None
         self.is_county_subdivision: bool = False
+        self._osm_parser: Optional[OSM] = None
 
         self._initialize_orchestrator()
 
@@ -278,3 +281,81 @@ class WorkflowOrchestrator:
             self.logger.error("Attempted to access region boundary before it was set.")
             raise ValueError("Region boundary has not been set yet. Process census data first.")
         return self.region_boundary_gdf
+
+    def _initialize_osm_parser(self) -> Optional[OSM]:
+        """
+        Lazily initializes and returns the pyrosm.OSM parser object.
+        This method is called by get_osm_parser() when the parser is first needed.
+
+        Returns:
+            Optional[pyrosm.OSM]: The initialized OSM parser, or None on failure.
+        """
+        self.logger.info("Attempting to lazily initialize OSM parser...")
+        input_paths = self.get_input_data_paths()
+        osm_pbf_path = Path(input_paths.get("osm_pbf_file"))
+
+        if not osm_pbf_path.exists():
+            self.logger.error(
+                f"OSM PBF file path ('osm_pbf_file') not found at: {osm_pbf_path}. "
+                "Cannot initialize OSM parser."
+            )
+            return None
+
+        boundary_gdf = self.get_region_boundary()
+
+        try:
+            # Ensure boundary is in WGS84 (EPSG:4326) as pyrosm expects
+            if boundary_gdf.crs is None or boundary_gdf.crs.to_epsg() != 4326:
+                self.logger.info("Re-projecting boundary to EPSG:4326 for pyrosm.")
+                boundary_gdf = boundary_gdf.to_crs("EPSG:4326")
+
+            # Get a single geometry for the bounding box.
+            # If multiple, use unary_union to get the overall extent.
+            if len(boundary_gdf.geometry) > 1:
+                boundary_geometry = boundary_gdf.unary_union
+                self.logger.info(
+                    "Multiple geometries found in boundary_gdf, "
+                    "using unary_union for OSM parser bounding box."
+                )
+            elif len(boundary_gdf.geometry) == 1:
+                boundary_geometry = boundary_gdf.geometry.iloc[0]
+
+            # Ensure the geometry is a Polygon or MultiPolygon as expected by pyrosm
+            if not isinstance(boundary_geometry, (Polygon, MultiPolygon)):
+                self.logger.error(
+                    f"Boundary geometry is not a Polygon or MultiPolygon (type: {type(boundary_geometry)}). "
+                    "OSM parser might not work as expected."
+                )
+            self.logger.info(
+                f"Initializing pyrosm.OSM with PBF: {osm_pbf_path} and derived bounding box."
+            )
+            osm_parser = OSM(str(osm_pbf_path), bounding_box=boundary_geometry)
+            self.logger.info("pyrosm.OSM parser initialized successfully.")
+            return osm_parser
+        except FileNotFoundError:
+            self.logger.error(
+                f"OSM PBF file not found by pyrosm at: {osm_pbf_path}",
+                exc_info=True)
+            return None
+        except Exception as e:
+            self.logger.error(f"Error initializing pyrosm.OSM parser: {e}", exc_info=True)
+            return None
+
+    def get_osm_parser(self) -> Optional[OSM]:
+        """
+        Provides access to the pyrosm.OSM parser object.
+        Initializes it on the first call if not already initialized (lazy loading).
+
+        Returns:
+            Optional[pyrosm.OSM]: The initialized OSM parser, or None if initialization fails.
+        """
+        if self._osm_parser is None:
+            self.logger.info(
+                "OSM parser not yet initialized. Attempting lazy initialization."
+            )
+            self._osm_parser = self._initialize_osm_parser()
+
+        if self._osm_parser is None:
+            self.logger.warning("OSM parser could not be initialized or is not available.")
+
+        return self._osm_parser
