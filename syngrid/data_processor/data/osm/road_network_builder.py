@@ -15,6 +15,7 @@ from shapely.wkb import dumps as wkb_dumps
 from tqdm import tqdm
 
 from syngrid.data_processor.data.base import DataHandler
+from syngrid.data_processor.utils.utils import visualize_road_network
 
 if TYPE_CHECKING:
     from syngrid.data_processor.workflow import WorkflowOrchestrator
@@ -378,8 +379,6 @@ class RoadNetworkBuilder(DataHandler):
             logger.info(
                 f"Extracting network using pre-initialized OSM parser. Network type: {network_type}")
             nodes, edges_gdf = osm.get_network(network_type=network_type, nodes=True)
-            if plot:
-                edges_gdf.plot()
             logger.info(f"Loaded {len(nodes)} nodes and {len(edges_gdf)} total edges.")
 
             # Export road network to a single GeoJSON file
@@ -429,23 +428,24 @@ class RoadNetworkBuilder(DataHandler):
             results['edges'] = edges_gdf
 
             # Create a simple visualization of the road network using the exported GeoJSON
-            try:
-                from syngrid.data_processor.utils.utils import visualize_road_network
+            if plot:
+                try:
+                    plot_output_dir = self.orchestrator.get_dataset_specific_output_directory(
+                        "PLOTS")
+                    viz_file = visualize_road_network(
+                        network_data=geojson_path,
+                        boundary_gdf=boundary_gdf,
+                        output_dir=plot_output_dir,
+                        title=f"Road Network - {network_type}"
+                    )
 
-                viz_file = visualize_road_network(
-                    network_data=geojson_path,
-                    boundary_gdf=boundary_gdf,
-                    output_dir=self.dataset_output_dir,
-                    title=f"Road Network - {network_type}"
-                )
+                    if viz_file:
+                        logger.info(f"Road network visualization created: {viz_file}")
+                        results['visualization_file'] = viz_file
+                except Exception as e:
+                    logger.error(f"Error creating road network visualization: {e}")
 
-                if viz_file:
-                    logger.info(f"Road network visualization created: {viz_file}")
-                    results['visualization_file'] = viz_file
-            except Exception as e:
-                logger.error(f"Error creating road network visualization: {e}")
-
-            logger.info(f"Processing finished. Output generated in: {self.dataset_output_dir}")
+                logger.info(f"Processing finished. Output generated in: {self.dataset_output_dir}")
 
         except Exception as e:
             logger.error(f"Error building road network: {e}")
