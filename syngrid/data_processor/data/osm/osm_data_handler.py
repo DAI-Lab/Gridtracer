@@ -7,12 +7,11 @@ from OpenStreetMap using pyrosm via PYROSM from the WorkflowOrchestrator.
 
 import logging
 import traceback
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import geopandas as gpd
-import osmnx as ox
 import pyproj
+from pyrosm import OSM
 from shapely.geometry import Point
 from shapely.ops import transform
 
@@ -190,117 +189,88 @@ class OSMDataHandler(DataHandler):
             f"Removed {len(to_remove)} duplicate features, {len(deduplicated_gdf)} remaining")
         return deduplicated_gdf
 
-    def extract_power_infrastructure(self, boundary_gdf=None):
+    def extract_power_infrastructure(self, osm_parser: OSM):
         """
-        Extract power infrastructure features (transformers, substations, poles) from OSM
-        using OSMnx to query the Overpass API directly.
-
-        Args:
-            boundary_gdf (GeoDataFrame, optional): Boundary to extract data for
-
-        Returns:
-            GeoDataFrame: GeoDataFrame containing power infrastructure features
+        Extract power infrastructure using the shared pyrosm parser from the orchestrator.
         """
-        try:
-            # Set boundary if provided
-            if boundary_gdf is not None and not boundary_gdf.empty:
-                if not self.set_boundary(boundary_gdf):
-                    return None
+        power_tags = ["transformer", "substation", "pole"]
+        # Extract power features
+        power_features = osm_parser.get_data_by_custom_criteria(
+            custom_filter={
+                "power": power_tags},
+            keep_nodes=False,
+            keep_ways=True,
+            keep_relations=True)
 
-            # Ensure we have a boundary polygon
-            if self.boundary_polygon is None:
-                logger.error("No boundary polygon available for extraction")
-                return None
+        # save RAW power features to file
+        raw_power_filepath = self.dataset_output_dir / "raw_power.geojson"
+        raw_power_filepath.parent.mkdir(parents=True, exist_ok=True)
+        power_features.to_file(raw_power_filepath, driver="GeoJSON")
 
-            logger.info("Extracting power infrastructure using OSMnx with Overpass API")
+        # Add element_type column based on geometry
+        power_features['element_type'] = power_features.geometry.apply(
+            lambda g: 'node' if isinstance(g, Point) else 'way'
+        )
 
-            # Define power infrastructure tags
-            power_tags = {
-                "power": ["transformer", "substation", "pole"]
-            }
+        # Filter abandoned infrastructure and keep only poles with transformers
+        filtered_features = power_features.copy()
 
-            # Extract power infrastructure using OSMnx's current API
-            power_features = ox.features.features_from_polygon(
-                polygon=self.boundary_polygon,
-                tags=power_tags
-            )
+        # Check if feature is abandoned
+        def is_abandoned(tags):
+            if not isinstance(tags, dict):
+                return False
 
-            if power_features is None or power_features.empty:
-                logger.warning("No power infrastructure found in OpenStreetMap")
-                return None
+            tag_dict = tags if isinstance(tags, dict) else {}
+            return (tag_dict.get('abandoned') == 'yes'
+                    or tag_dict.get('abandoned:substation') == 'yes'
+                    or tag_dict.get('abandoned:building') == 'transformer')
 
-            logger.info(f"Successfully extracted {len(power_features)} power features with OSMnx")
+        # Check if pole has a distribution transformer
+        def has_distribution_transformer(tags):
+            if not isinstance(tags, dict):
+                return False
 
-            # Add element_type column based on geometry
-            power_features['element_type'] = power_features.geometry.apply(
-                lambda g: 'node' if isinstance(g, Point) else 'way'
-            )
+            tag_dict = tags if isinstance(tags, dict) else {}
+            return tag_dict.get('transformer') == 'distribution'
 
-            # Filter abandoned infrastructure and keep only poles with transformers
-            filtered_features = power_features.copy()
+        filtered_features['tags'] = filtered_features.apply(
+            lambda row: {col: row[col] for col in row.index if col not in
+                         ['geometry', 'element_type', 'osmid', 'tags']},
+            axis=1
+        )
 
-            # Check if feature is abandoned
-            def is_abandoned(tags):
-                if not isinstance(tags, dict):
-                    return False
+        # Get power type from columns
+        filtered_features['power'] = filtered_features['tags'].apply(
+            lambda tag_dict: tag_dict.get('power') if isinstance(tag_dict, dict) else None
+        )
 
-                tag_dict = tags if isinstance(tags, dict) else {}
-                return (tag_dict.get('abandoned') == 'yes'
-                        or tag_dict.get('abandoned:substation') == 'yes'
-                        or tag_dict.get('abandoned:building') == 'transformer')
+        # Apply filters
+        non_abandoned_mask = ~filtered_features['tags'].apply(is_abandoned)
+        transformer_substation_mask = filtered_features['power'].isin(
+            ['transformer', 'substation'])
 
-            # Check if pole has a distribution transformer
-            def has_distribution_transformer(tags):
-                if not isinstance(tags, dict):
-                    return False
+        # For poles, keep only those with distribution transformers
+        poles_mask = ((filtered_features['power'] == 'pole')
+                      & filtered_features['tags'].apply(has_distribution_transformer))
 
-                tag_dict = tags if isinstance(tags, dict) else {}
-                return tag_dict.get('transformer') == 'distribution'
+        # Combine masks
+        final_mask = (transformer_substation_mask & non_abandoned_mask) | poles_mask
+        filtered_features = filtered_features[final_mask]
 
-            # In OSMnx, tags are in a series of columns, not a dictionary
-            # We'll need to reconstruct the tags dictionary
-            filtered_features['tags'] = filtered_features.apply(
-                lambda row: {col: row[col] for col in row.index if col not in
-                             ['geometry', 'element_type', 'osmid', 'tags']},
-                axis=1
-            )
-
-            # Get power type from columns
-            filtered_features['power'] = filtered_features['tags'].apply(
-                lambda tag_dict: tag_dict.get('power') if isinstance(tag_dict, dict) else None
-            )
-
-            # Apply filters
-            non_abandoned_mask = ~filtered_features['tags'].apply(is_abandoned)
-            transformer_substation_mask = filtered_features['power'].isin(
-                ['transformer', 'substation'])
-
-            # For poles, keep only those with distribution transformers
-            poles_mask = ((filtered_features['power'] == 'pole')
-                          & filtered_features['tags'].apply(has_distribution_transformer))
-
-            # Combine masks
-            final_mask = (transformer_substation_mask & non_abandoned_mask) | poles_mask
-            filtered_features = filtered_features[final_mask]
-
-            logger.info(f"Power features after filtering: {len(filtered_features)}")
-
+        if power_features is None or power_features.empty:
+            logger.warning("No power infrastructure found in OpenStreetMap")
+            return None
+        else:
+            deduplicated_power_features = self.deduplicate_power_features(filtered_features)
             # Save power features
             power_filepath = self.dataset_output_dir / "power.geojson"
-            filtered_features.to_file(power_filepath, driver="GeoJSON")
-            logger.info(f"Saved power features to {power_filepath}")
+            deduplicated_power_features.to_file(power_filepath, driver="GeoJSON")
 
-            # Deduplicate features
-            deduplicated_features = self.deduplicate_power_features(filtered_features)
+            logger.info(
+                f"Successfully extracted {len(deduplicated_power_features)} power features with pyrosm")
+            return deduplicated_power_features, power_filepath
 
-            return deduplicated_features
-
-        except Exception as e:
-            logger.error(f"Error extracting power infrastructure: {e}")
-            logger.error(traceback.format_exc())
-            return None
-
-    def extract_buildings(self, osm_parser) -> Tuple[Optional[gpd.GeoDataFrame], Optional[Path]]:
+    def extract_buildings(self, osm_parser: OSM):
         """
         Extract buildings using the shared pyrosm parser from the orchestrator.
 
@@ -424,7 +394,7 @@ class OSMDataHandler(DataHandler):
             logger.error(f"Error extracting buildings with pyrosm: {e}", exc_info=True)
             return None, None
 
-    def extract_pois(self, osm_parser):
+    def extract_pois(self, osm_parser: OSM):
         """
         Extract POIs using OSMnx with direct polygon boundary filtering.
 
@@ -498,7 +468,7 @@ class OSMDataHandler(DataHandler):
             logger.error(traceback.format_exc())
             return None, None
 
-    def extract_landuse(self, osm_parser):
+    def extract_landuse(self, osm_parser: OSM):
         """
         Extract land use polygons and classify them as residential, industrial, or public.
         All other landuse types are ignored.
@@ -594,10 +564,10 @@ class OSMDataHandler(DataHandler):
             'buildings_filepath': None,
             'pois': None,
             'pois_filepath': None,
+            'landuse': None,
+            'landuse_filepath': None,
             'power': None,
             'power_filepath': None,
-            'landuse': None,
-            'landuse_filepath': None
         }
 
         # Initialize the OSM parser
@@ -607,13 +577,14 @@ class OSMDataHandler(DataHandler):
         buildings_filepath = self.dataset_output_dir / "buildings.geojson"
         pois_filepath = self.dataset_output_dir / "pois.geojson"
         landuse_filepath = self.dataset_output_dir / "landuse.geojson"
+        power_filepath = self.dataset_output_dir / "power.geojson"
 
         # Extract buildings
         if not buildings_filepath.exists():
             buildings, buildings_filepath = self.extract_buildings(osm_parser)
             if buildings is not None:
                 results['buildings'] = buildings
-            results['buildings_filepath'] = buildings_filepath
+                results['buildings_filepath'] = buildings_filepath
         else:
             logger.info(f"Using existing buildings file: {buildings_filepath}")
             results['buildings'] = gpd.read_file(buildings_filepath)
@@ -641,19 +612,47 @@ class OSMDataHandler(DataHandler):
             results['landuse'] = gpd.read_file(landuse_filepath)
             results['landuse_filepath'] = landuse_filepath
 
-        try:
-            power = self.extract_power_infrastructure(boundary_gdf)  # This still uses osmnx
-            if power is not None and not power.empty:
-                power_filepath = self.dataset_output_dir / "power.geojson"
-                power.to_file(power_filepath, driver="GeoJSON")
+        # Extract power infrastructure
+        if not power_filepath.exists():
+            power, power_filepath = self.extract_power_infrastructure(osm_parser)
+            if power is not None:
                 results['power'] = power
                 results['power_filepath'] = power_filepath
-        except Exception as e:
-            logger.error(f"Error during (old) power infrastructure extraction: {e}")
-        logger.warning(
-            "Power infrastructure extraction with pyrosm is not yet implemented in this refactoring step.")
+        else:
+            logger.info(f"Using existing power file: {power_filepath}")
+            results['power'] = gpd.read_file(power_filepath)
+            results['power_filepath'] = power_filepath
 
         return results
+
+    def plot_osm_data(self, osm_data: Dict[str, Any]):
+        """
+        Plot the OSM data.
+        """
+        # plot buildings
+        ax_buildings = osm_data['buildings'].plot(
+            column="building", figsize=(
+                12, 12), legend=True, legend_kwds=dict(
+                loc='upper left', ncol=3, bbox_to_anchor=(
+                    1, 1)))
+        fig_buildings = ax_buildings.get_figure()
+        fig_buildings.savefig(self.dataset_output_dir / "buildings.png")
+        # plot pois
+        ax_pois = osm_data['pois'].plot(
+            column='amenity', markersize=3, figsize=(
+                12, 12), legend=True, legend_kwds=dict(
+                loc='upper left', ncol=5, bbox_to_anchor=(
+                    1, 1)))
+        fig_pois = ax_pois.get_figure()
+        fig_pois.savefig(self.dataset_output_dir / "pois.png")
+        # plot
+        ax_landuse = osm_data['landuse'].plot(column='landuse', legend=True, figsize=(10, 6))
+        fig_landuse = ax_landuse.get_figure()
+        fig_landuse.savefig(self.dataset_output_dir / "landuse.png")
+        # plot power
+        ax_power = osm_data['power'].plot(column='power', legend=True, figsize=(10, 6))
+        fig_power = ax_power.get_figure()
+        fig_power.savefig(self.dataset_output_dir / "power.png")
 
     def process(self, plot: bool = False) -> Dict[str, Any]:
         """
@@ -668,22 +667,6 @@ class OSMDataHandler(DataHandler):
 
         osm_data = self.download()
         if plot:
-            ax_buildings = osm_data['buildings'].plot(
-                column="building", figsize=(
-                    12, 12), legend=True, legend_kwds=dict(
-                    loc='upper left', ncol=3, bbox_to_anchor=(
-                        1, 1)))
-            fig_buildings = ax_buildings.get_figure()
-            fig_buildings.savefig(self.dataset_output_dir / "buildings.png")
-            ax_pois = osm_data['pois'].plot(
-                column='amenity', markersize=3, figsize=(
-                    12, 12), legend=True, legend_kwds=dict(
-                    loc='upper left', ncol=5, bbox_to_anchor=(
-                        1, 1)))
-            fig_pois = ax_pois.get_figure()
-            fig_pois.savefig(self.dataset_output_dir / "pois.png")
-            ax_landuse = osm_data['landuse'].plot(column='landuse', legend=True, figsize=(10, 6))
-            fig_landuse = ax_landuse.get_figure()
-            fig_landuse.savefig(self.dataset_output_dir / "landuse.png")
+            self.plot_osm_data(osm_data)
 
         return osm_data

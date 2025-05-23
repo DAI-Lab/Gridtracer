@@ -17,6 +17,7 @@ ALL_DATASETS: List[str] = [
     "CENSUS",
     "NREL",
     "OSM",
+    "MICROSOFT_BUILDINGS",
     "STREET_NETWORK",
     "PLOTS",
     "TMP"
