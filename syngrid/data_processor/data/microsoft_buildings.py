@@ -452,10 +452,10 @@ class MicrosoftBuildingsDataHandler(DataHandler):
         output_path = self.dataset_output_dir / "ms_buildings_output.geojson"
         if output_path.exists():
             self.logger.info(f"Microsoft building data already downloaded to {output_path}")
+            ms_buildings = gpd.read_file(output_path)
             return {
-                'state_abbr': self.orchestrator.get_fips_dict()['state'],
-                'building_files': [output_path],
-                'mapping_file': self.mapping_file
+                    'ms_buildings': ms_buildings,
+                    'ms_buildings_filepath': output_path,
             }
 
         try:
@@ -532,7 +532,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
             if 'error' in download_results:
                 return download_results
 
-            building_files = download_results['building_files']
+            building_files = download_results['ms_buildings']
 
             # Filter buildings to region
             filtered_buildings = self._filter_buildings_to_region(building_files)

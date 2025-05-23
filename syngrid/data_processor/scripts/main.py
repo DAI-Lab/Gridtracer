@@ -1,196 +1,137 @@
-# Entrypoint for the SynGrid data processing pipeline
-#
-# This script orchestrates the entire data processing workflow:
-# 1. Regional Data Extraction & Preparation
-# 2. Building Classification Pipeline
-# 3. Routable Road Network Generation
-# 4. Transformer Network Extraction
+"""
+Entrypoint for the SynGrid data processing pipeline (Version 2.0).
 
-from syngrid.data_processor.config import ConfigLoader
-from syngrid.data_processor.data import CensusDataHandler, NRELDataHandler, OSMDataHandler
-from syngrid.data_processor.data.osm.road_network_builder import Road_network_builder
-from syngrid.data_processor.utils import (
-    logger, lookup_fips_codes, visualize_blocks, visualize_osm_data,)
+This script orchestrates the entire data processing workflow using the
+WorkflowOrchestrator.
+"""
+import time
+import geopandas as gpd
+
+from syngrid.data_processor.data.microsoft_buildings import MicrosoftBuildingsDataHandler
+from syngrid.data_processor.data.osm.osm_data_handler import OSMDataHandler
+from syngrid.data_processor.processing.building_processor import BuildingHeuristicsProcessor
+from syngrid.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
+from syngrid.data_processor.utils import logger
+from syngrid.data_processor.workflow import WorkflowOrchestrator
+from syngrid.data_processor.data.nrel import NRELDataHandler
+from syngrid.data_processor.data.census import CensusDataHandler
 
 
-def main():
-    #####################################################################
-    # STEP 1: REGIONAL DATA EXTRACTION & PREPARATION
-    #####################################################################
-    logger.info("Starting Step 1: Regional Data Extraction & Preparation")
 
-    # 1.1: Parse the YAML config, validate inputs
-    logger.info("1.1: Loading and validating configuration")
-    config = ConfigLoader()
-    region = config.get_region()
-    output_dir = config.get_output_dir()
-    input_file_paths = config.get_input_data_paths()
+def dev_fill_census_results():
+    """
+    Just for testing purposes os i dotn have tpo always rerun this  fills this from precreated links :
+          - 'target_region_blocks': GeoDataFrame of census blocks for the target region.
+                - 'target_region_blocks_filepath': Path to the saved blocks GeoJSON.
+                - 'target_region_boundary': GeoDataFrame representing the final authoritative
+                                            boundary for the processing run.
+                - 'target_region_boundary_filepath': Path to the final region boundary GeoJSON.
+    """
+    region_blocks_filepath = "/Users/magic-rabbit/Documents/00_Tech-Repositories/05_MASTER_THESIS/SynGrid/syngrid/data_processor/output/MA/Middlesex_County/Cambridge_city_old/Census/25_017_11000_blocks.geojson"
+    region_boundary_filepath = "/Users/magic-rabbit/Documents/00_Tech-Repositories/05_MASTER_THESIS/SynGrid/syngrid/data_processor/output/MA/Middlesex_County/Cambridge_city_old/Census/25_017_11000_blocks_boundary.geojson"
+    census_data = {}
+    census_data['target_region_blocks'] = gpd.read_file(region_blocks_filepath)
+    census_data['target_region_blocks_filepath'] = region_blocks_filepath
+    census_data['target_region_boundary'] = gpd.read_file(region_boundary_filepath)
+    census_data['target_region_boundary_filepath'] = region_boundary_filepath
+    return census_data
 
-    # 1.2: Lookup FIPS codes for the specified region
-    logger.info("1.2: Looking up FIPS codes for region")
-    fips_dict = lookup_fips_codes(region)
-    logger.info(f"Extracting data for region: {region}")
 
-    # 1.3: Download/load administrative boundaries and census blocks using the Census handler
-    logger.info("1.3: Downloading Census boundaries and blocks")
-    census_handler = CensusDataHandler(fips_dict, output_dir=output_dir)
-    region_data = census_handler.process()
+def run_pipeline_v2():
+    """
+    Runs the main SynGrid data processing pipeline using the WorkflowOrchestrator.
+    """
+    start_time = time.time()
+    logger.info("Starting SynGrid Data Processing Pipeline v2.0")
 
-    # # 1.3.1: Process Census PL 94-171 population and housing data
-    # logger.info("1.3.1: Processing Census PL 94-171 population and housing data")
-    # pl_data_handler = CensusPLDataHandler(fips_dict, output_dir=output_dir)
-    # population_data = pl_data_handler.process(boundary_gdf=region_data['boundary'])
-    # # Add the population data to the region data
-    # region_data['population'] = population_data
+    try:
+        # # Initialize the orchestrator, loading config, setting up FIPS, and creating all output directories
+        orchestrator = WorkflowOrchestrator()
 
-    # 1.4: Visualize the region's census blocks
-    logger.info("1.4: Visualizing census blocks")
-    # Create visualization title
-    title = None
-    if region_data['subdivision'] is not None and not region_data['subdivision'].empty:
-        # For subdivision
-        subdiv_name = region_data['subdivision'].iloc[0]['NAME']
-        title = f"Census Blocks in {subdiv_name}"
-    else:
-        # For county
-        title = f"Census Blocks in {fips_dict['county']}, {fips_dict['state']}"
+        # TODO: Uncomment this when you want to use the precreated census data
+        #census_data = dev_fill_census_results()
+        #orchestrator.set_region_boundary(census_data['target_region_boundary'])
 
-    # Generate and log visualization
-    if region_data['blocks'] is not None and not region_data['blocks'].empty:
-        plot_file = visualize_blocks(
-            blocks_gdf=region_data['blocks'],
-            subdivision_gdf=region_data['subdivision'],
-            fips_dict=fips_dict,
-            title=title
-        )
-        logger.info(f"Generated visualization: {plot_file}")
+        # # --- STEP 1: REGIONAL DATA EXTRACTION & PREPARATION ---
+        logger.info("STEP 1: Regional Data Extraction & Preparation")
 
-    logger.info(f"Region boundary: {region_data['boundary']}")
+        census_handler = CensusDataHandler(orchestrator)
+        census_data = census_handler.process(plot=False)
+        if not census_data or 'target_region_boundary' not in census_data:  # Check for primary output
+            logger.error(
+                "Census data processing failed or did not yield a target_region_boundary. Halting.")
+            return
 
-    # 1.5: Download and process NREL data for the region
-    logger.info("1.5: Processing NREL data")
-    nrel_handler = NRELDataHandler(
-        fips_dict,
-        input_file_path=input_file_paths['nrel_data'],
-        output_dir=output_dir
-    )
-    nrel_data = nrel_handler.process()
-    logger.info(f"NREL data processing complete: {nrel_data['parquet_path']}")
+        # --- STEP 2: Process NREL Data ---
 
-    # 1.6: Download and process NLCD land cover data (to be implemented)
-    logger.info("1.6: Downloading NLCD data (not implemented yet)")
-    # TODO: Implement NLCD data handler class and use it here
-    # nlcd_handler = NLCDDataHandler(fips_dict, output_dir=output_dir)
-    # nlcd_data = nlcd_handler.process(boundary_gdf=region_data['boundary'])
+        logger.info("STEP 2: Processing NREL data")
+        nrel_handler = NRELDataHandler(orchestrator)
+        nrel_data = nrel_handler.process()
+        if nrel_data.get('parquet_path'):
+            logger.info(
+                f"NREL data processing complete. Parquet at: {nrel_data['parquet_path']}")
+        else:
+            logger.warning("NREL data processing did not yield a parquet path.")
+        logger.info(f"NREL data: {list(nrel_data.keys())}")
 
-    # 1.7: Extract OSM data for the region
-    logger.info("1.7: Extracting OpenStreetMap data")
+        # --- STEP 3: Extract OSM Data ---
+        osm_handler = OSMDataHandler(orchestrator)
+        osm_data = osm_handler.process(plot=False)
+        if osm_data is not None:
+            logger.info("OSM data processing complete.")
+        else:
+            logger.warning("OSM data processing did not yield a result.")
 
-    osm_handler = OSMDataHandler(
-        fips_dict,
-        output_dir=output_dir
-    )
-
-    # Process OSM data with the region boundary for efficient extraction
-    if region_data['boundary'] is not None and not region_data['boundary'].empty:
-        logger.info("Extracting OSM data using exact boundary polygon via OSMnx")
-        osm_data = osm_handler.process(region_data['boundary'])
-    else:
-        # We cannot process without a boundary when using OSMnx with Overpass API
-        logger.error("No region boundary available. OSMnx extraction requires a boundary polygon.")
-        logger.error("Please ensure a valid region boundary is available.")
-        osm_data = None
-
-    if osm_data:
-        if osm_data['buildings'] is not None:
-            logger.info(f"Extracted {len(osm_data['buildings'])} OSM buildings")
-        if osm_data['pois'] is not None:
-            logger.info(f"Extracted {len(osm_data['pois'])} OSM POIs")
-        if osm_data['power'] is not None:
-            logger.info(f"Extracted {len(osm_data['power'])} power infrastructure features")
-            logger.info(f"Power features saved to: {osm_data['power_filepath']}")
-        if osm_data['landuse'] is not None:
-            logger.info(f"Extracted {len(osm_data['landuse'])} land use polygons")
-            logger.info(f"Land use data saved to: {osm_data['landuse_filepath']}")
-
-            # Optional: Log the distribution of land use categories
-            if 'category' in osm_data['landuse'].columns:
-                category_counts = osm_data['landuse']['category'].value_counts()
-                logger.info("Land use categories distribution:")
-                for category, count in category_counts.items():
-                    logger.info(f"  - {category}: {count} polygons")
-
-        # 1.7.1: Visualize the OSM data
-        logger.info("1.7.1: Visualizing OpenStreetMap data")
-
-        # First, create a visualization with all data elements
-        osm_plot_file = visualize_osm_data(
-            fips_dict=fips_dict,
-            boundary_gdf=region_data['boundary'],
-            output_dir=output_dir,
-            plot_buildings=True,
-            plot_pois=True,
-            plot_power=True
-        )
-        if osm_plot_file:
-            logger.info(f"Generated complete OSM data visualization: {osm_plot_file}")
-
-        # Then create a visualization without POIs for clarity
-        osm_plot_no_pois = visualize_osm_data(
-            fips_dict=fips_dict,
-            boundary_gdf=region_data['boundary'],
-            output_dir=output_dir,
-            plot_buildings=True,
-            plot_pois=False,
-            plot_power=True
-        )
-        if osm_plot_no_pois:
-            logger.info(f"Generated OSM visualization without POIs: {osm_plot_no_pois}")
-
-        # Create a visualization with land use if available
-        if osm_data.get('landuse') is not None:
-            logger.info("Creating visualization with land use data")
-            osm_plot_landuse = visualize_osm_data(
-                fips_dict=fips_dict,
-                boundary_gdf=region_data['boundary'],
-                output_dir=output_dir,
-                plot_buildings=True,
-                plot_pois=False,
-                plot_power=True,
-                plot_landuse=True
+        # --- STEP 3.5: Process Microsoft Buildings Data ---
+        logger.info("STEP 3.5: Processing Microsoft Buildings data")
+        microsoft_buildings_handler = MicrosoftBuildingsDataHandler(orchestrator)
+        microsoft_buildings_data = microsoft_buildings_handler.process()
+        if microsoft_buildings_data:
+            logger.info(
+                f"Microsoft Buildings data processing complete. "
+                f"Found {len(microsoft_buildings_data['ms_buildings'])} buildings."
             )
-            if osm_plot_landuse:
-                logger.info(f"Generated OSM visualization with land use: {osm_plot_landuse}")
+        else:
+            logger.warning("Microsoft Buildings data processing did not yield buildings data.")
 
-    # #####################################################################
-    # # STEP 2: BUILDING CLASSIFICATION PIPELINE (placeholder)
-    # #####################################################################
-    # logger.info("Step 2 not implemented yet: Building Classification Pipeline")
+        # # --- STEP 4: Building Classification Heuristic ---
+        building_classification_heuristic = BuildingHeuristicsProcessor(
+            orchestrator.base_output_dir)
+        building_classification_data = building_classification_heuristic.process(
+            census_data, osm_data, microsoft_buildings_data)
+        if building_classification_data is not None and not building_classification_data.empty:
+            logger.info(
+                f"Building classification complete. Processed {len(building_classification_data)} buildings."
+            )
+        else:
+            logger.warning("Building classification did not yield a result.")
 
-    #####################################################################
-    # STEP 3: ROUTABLE ROAD NETWORK GENERATION
-    #####################################################################
-    logger.info("Starting Step 3: Routable Road Network Generation")
+        # --- STEP 5: ROUTABLE ROAD NETWORK GENERATION ---
+        road_network_builder = RoadNetworkBuilder(orchestrator=orchestrator)
+        road_network_results = road_network_builder.process(
+            boundary_gdf=census_data['target_region_boundary'], plot=True)
+        if road_network_results.get('network_gpkg'):
+            logger.info(
+                f"Road network generation complete. Network GPKG at: {road_network_results['network_gpkg']}"
+            )
+        else:
+            logger.warning("Road network generation did not yield a GPKG path.")
 
-    # Get OSM PBF file path from configuration if available
-    osm_pbf_file = input_file_paths.get('osm_pbf_file', None)
+        logger.info("SynGrid Data Processing Pipeline v2.0 completed successfully.")
 
-    # Initialize the Road_network_builder
-    logger.info("3.1: Creating road network builder")
-    road_network_builder = Road_network_builder(
-        fips_dict=fips_dict,
-        output_dir=output_dir,
-        osm_pbf_file=osm_pbf_file,
-    )
-
-    # Process the road network with boundary clipping
-    logger.info("3.2: Building routable road network")
-    _ = road_network_builder.process(
-        boundary_gdf=region_data.get('boundary')
-    )
-
-    logger.info("Step 3 completed: Routable Road Network Generation")
+    except ValueError as ve:
+        logger.error(f"Configuration or validation error during pipeline: {ve}", exc_info=True)
+    except RuntimeError as re:
+        logger.error(f"Runtime error during pipeline execution: {re}", exc_info=True)
+    except Exception as e:
+        logger.error(f"An unexpected error occurred in the pipeline: {e}", exc_info=True)
+    finally:
+        # Calculate and log total execution time
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        logger.info(f"SynGrid Data Processing Pipeline completed in {total_time} seconds")
 
 
 if __name__ == '__main__':
-    main()
+    run_pipeline_v2()

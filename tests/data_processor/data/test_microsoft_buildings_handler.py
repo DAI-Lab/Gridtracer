@@ -238,19 +238,16 @@ def test_full_microsoft_buildings_process(
 
     # Verify process results
     assert isinstance(result, dict)
-    assert 'state_abbr' in result
-    assert 'total_buildings' in result
-    assert 'mapping_file' in result
+    assert 'ms_buildings' in result
+    assert 'ms_buildings_filepath' in result
 
     # Check for error handling
     if 'error' in result:
         pytest.fail(f"Process failed with error: {result['error']}")
 
-    # Verify state abbreviation
-    assert result['state_abbr'] == 'MA'
 
     # Verify building count is reasonable
-    total_buildings = result['total_buildings']
+    total_buildings = len(result['ms_buildings'])
     assert isinstance(total_buildings, int)
     assert total_buildings >= 0
 
@@ -262,7 +259,6 @@ def test_full_microsoft_buildings_process(
             assert Path(buildings_filepath).exists()
 
 
-@pytest.mark.slow
 def test_state_mapping_file_persistence(
     microsoft_buildings_handler: MicrosoftBuildingsDataHandler
 ) -> None:
