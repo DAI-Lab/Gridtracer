@@ -107,21 +107,20 @@ class NRELDataHandler(DataHandler):
 
         county_data_frames = []
         try:
-            chunk_size = 100_000  # Underscore for readability
+            chunk_size = 100_000
 
             try:
-                # More efficient way to count lines for tqdm progress bar
                 with open(self.input_file_path, 'r') as f_count:
-                    total_lines = sum(1 for _ in f_count) - 1  # -1 for header
+                    total_lines = sum(1 for _ in f_count) - 1
                 if total_lines < 0:
-                    total_lines = 0  # Handle empty or header-only file
+                    total_lines = 0
                 total_chunks = (total_lines // chunk_size) + \
                     (1 if total_lines % chunk_size > 0 and total_lines > 0 else 0)
-            except Exception:  # Fallback if line counting fails
+            except Exception:
                 self.logger.warning(
                     "Could not determine total lines for NREL progress bar.",
                     exc_info=True)
-                total_chunks = None  # tqdm will run without a total
+                total_chunks = None
 
             with tqdm(total=total_chunks, desc=f"Processing NREL for {region_name_for_log}", unit="chunk") as pbar:
                 for chunk in pd.read_csv(self.input_file_path, sep="\t",
@@ -131,22 +130,16 @@ class NRELDataHandler(DataHandler):
                         pbar.update(1)
                         continue
 
-                    # Ensure FIPS codes from orchestrator are strings for comparison
-                    # (They should already be, but this is a safe check)
                     str_state_fips = str(state_fips).zfill(2)
                     str_county_fips = str(county_fips).zfill(3)
 
-                    # KISS filtering logic based on your previous working snippet
                     county_ids_no_g = chunk['in.county'].astype(str).str.removeprefix('G')
 
-                    # Pandas Series boolean conditions for filtering
-                    # Ensure string is long enough before slicing
                     state_match = pd.Series(False, index=county_ids_no_g.index)
                     valid_for_state_slice = county_ids_no_g.str.len() >= 2
                     state_match[valid_for_state_slice] = county_ids_no_g[valid_for_state_slice].str[:2] == str_state_fips
 
                     county_match = pd.Series(False, index=county_ids_no_g.index)
-                    # Need at least 6 characters for slice [3:6] (e.g., SSXCCC)
                     valid_for_county_slice = county_ids_no_g.str.len() >= 6
                     county_match[valid_for_county_slice] = county_ids_no_g[valid_for_county_slice].str[3:6] == str_county_fips
 
@@ -177,7 +170,7 @@ class NRELDataHandler(DataHandler):
                 exc_info=True)
             return None, None
 
-    def download(self) -> Dict[str, Optional[Path]]:  # Adjusted return type to match likely usage
+    def download(self) -> Dict[str, Optional[Path]]:
         """
         Abstract download method implementation for NRELDataHandler.
         For NREL, "download" means processing the local file.

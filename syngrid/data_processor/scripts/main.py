@@ -5,17 +5,17 @@ This script orchestrates the entire data processing workflow using the
 WorkflowOrchestrator.
 """
 import time
+
 import geopandas as gpd
 
+from syngrid.data_processor.data.census import CensusDataHandler
 from syngrid.data_processor.data.microsoft_buildings import MicrosoftBuildingsDataHandler
+from syngrid.data_processor.data.nrel import NRELDataHandler
 from syngrid.data_processor.data.osm.osm_data_handler import OSMDataHandler
-from syngrid.data_processor.processing.building_processor import BuildingHeuristicsProcessor
 from syngrid.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
+from syngrid.data_processor.processing.building_processor import BuildingHeuristicsProcessor
 from syngrid.data_processor.utils import logger
 from syngrid.data_processor.workflow import WorkflowOrchestrator
-from syngrid.data_processor.data.nrel import NRELDataHandler
-from syngrid.data_processor.data.census import CensusDataHandler
-
 
 
 def dev_fill_census_results():
@@ -49,8 +49,8 @@ def run_pipeline_v2():
         orchestrator = WorkflowOrchestrator()
 
         # TODO: Uncomment this when you want to use the precreated census data
-        #census_data = dev_fill_census_results()
-        #orchestrator.set_region_boundary(census_data['target_region_boundary'])
+        # census_data = dev_fill_census_results()
+        # orchestrator.set_region_boundary(census_data['target_region_boundary'])
 
         # # --- STEP 1: REGIONAL DATA EXTRACTION & PREPARATION ---
         logger.info("STEP 1: Regional Data Extraction & Preparation")
@@ -129,7 +129,7 @@ def run_pipeline_v2():
         # Calculate and log total execution time
         end_time = time.time()
         total_time = end_time - start_time
-        
+
         logger.info(f"SynGrid Data Processing Pipeline completed in {total_time} seconds")
 
 

@@ -454,8 +454,8 @@ class MicrosoftBuildingsDataHandler(DataHandler):
             self.logger.info(f"Microsoft building data already downloaded to {output_path}")
             ms_buildings = gpd.read_file(output_path)
             return {
-                    'ms_buildings': ms_buildings,
-                    'ms_buildings_filepath': output_path,
+                'ms_buildings': ms_buildings,
+                'ms_buildings_filepath': output_path,
             }
 
         try:

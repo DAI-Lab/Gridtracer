@@ -245,7 +245,6 @@ def test_full_microsoft_buildings_process(
     if 'error' in result:
         pytest.fail(f"Process failed with error: {result['error']}")
 
-
     # Verify building count is reasonable
     total_buildings = len(result['ms_buildings'])
     assert isinstance(total_buildings, int)
