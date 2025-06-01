@@ -1126,11 +1126,10 @@ class BuildingHeuristicsProcessor:
     def _assign_building_id(self, buildings: gpd.GeoDataFrame,
                             census_blocks: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
-        Assigns unique building IDs based on a two-step census block assignment.
-        Step 1: Assigns buildings fully 'within' a single census block.
-        Step 2: For remaining buildings, assigns to the first block they 'intersect'.
+        Assigns unique building IDs based on centroid-to-census-block assignment.
+        Uses building centroids for robust spatial matching while preserving original polygon geometries.
 
-        Building ID format: {STATEFP20}{COUNTYFP20}{BLOCKCE20}{SEQUENTIAL_NUMBER}
+        Building ID format: {GEOID20}{SEQUENTIAL_NUMBER}
         """
         if buildings is None or len(buildings) == 0:
             logger.warning("No buildings provided for building ID assignment")
@@ -1141,20 +1140,18 @@ class BuildingHeuristicsProcessor:
 
         if census_blocks is None or len(census_blocks) == 0:
             logger.warning(
-                "No census blocks provided for building ID assignment. All buildings will be unassigned.")
+                "No census blocks provided for building ID assignment. "
+                "All buildings will be unassigned.")
             buildings_copy = buildings.copy()
             buildings_copy['building_id'] = None
             buildings_copy['census_block_id'] = None
             if not buildings_copy.empty:
-                # Ensure output_dir exists before trying to save
                 self.output_dir.mkdir(parents=True, exist_ok=True)
                 buildings_copy.to_file(
-                    self.output_dir
-                    / "unassigned_buildings.geojson",
-                    driver="GeoJSON")
+                    self.output_dir / "unassigned_buildings.geojson", driver="GeoJSON")
             return buildings_copy
 
-        required_cols = ['STATEFP20', 'COUNTYFP20', 'BLOCKCE20', 'geometry']
+        required_cols = ['GEOID20', 'geometry']
         missing_cols = [col for col in required_cols if col not in census_blocks.columns]
         if missing_cols:
             logger.error(
@@ -1165,18 +1162,20 @@ class BuildingHeuristicsProcessor:
             if not buildings_copy.empty:
                 self.output_dir.mkdir(parents=True, exist_ok=True)
                 buildings_copy.to_file(
-                    self.output_dir
-                    / "unassigned_buildings.geojson",
-                    driver="GeoJSON")
+                    self.output_dir / "unassigned_buildings.geojson", driver="GeoJSON")
             return buildings_copy
 
+        logger.info("Starting centroid-based building ID assignment")
+        logger.info(f"Input: {len(buildings)} buildings, {len(census_blocks)} census blocks")
         logger.info(f"Original buildings CRS: {buildings.crs}")
         logger.info(f"Original census_blocks CRS: {census_blocks.crs}")
 
+        # Project to target CRS for accurate centroid calculation
         target_crs = "EPSG:5070"
         try:
             buildings_proj = buildings.to_crs(target_crs)
             census_blocks_proj = census_blocks.to_crs(target_crs)
+            logger.info(f"Projected to {target_crs} for accurate centroid calculation")
         except Exception as e:
             logger.error(f"Error during CRS projection to {target_crs}: {e}. Cannot assign IDs.")
             buildings_copy = buildings.copy()
@@ -1185,158 +1184,149 @@ class BuildingHeuristicsProcessor:
             if not buildings_copy.empty:
                 self.output_dir.mkdir(parents=True, exist_ok=True)
                 buildings_copy.to_file(
-                    self.output_dir
-                    / "unassigned_buildings.geojson",
-                    driver="GeoJSON")
+                    self.output_dir / "unassigned_buildings.geojson", driver="GeoJSON")
             return buildings_copy
 
-        logger.info(
-            f"Projected to {target_crs}. Buildings bounds: {buildings_proj.total_bounds}, Census blocks bounds: {census_blocks_proj.total_bounds}")
+        # Phase 2: Calculate building centroids for spatial matching
+        logger.info("Phase 2: Calculating building centroids for spatial matching")
+        try:
+            # Create centroids while preserving original building indices and attributes
+            building_centroids = buildings_proj.copy()
+            building_centroids['centroid'] = buildings_proj.geometry.centroid
+            building_centroids['original_geometry'] = buildings_proj.geometry
 
-        # Use original buildings DataFrame index for tracking and final assignment
+            # Replace geometry with centroids for spatial join
+            building_centroids = building_centroids.set_geometry('centroid')
+
+            centroid_success_count = building_centroids['centroid'].notna().sum()
+            logger.info(f"Successfully calculated {centroid_success_count}/{len(buildings)} "
+                        f"building centroids ({centroid_success_count/len(buildings)*100:.1f}% success)")
+
+            if centroid_success_count == 0:
+                logger.error("No valid centroids calculated. Cannot proceed with assignment.")
+                buildings_copy = buildings.copy()
+                buildings_copy['building_id'] = None
+                buildings_copy['census_block_id'] = None
+                return buildings_copy
+
+        except Exception as e:
+            logger.error(f"Error calculating building centroids: {e}")
+            buildings_copy = buildings.copy()
+            buildings_copy['building_id'] = None
+            buildings_copy['census_block_id'] = None
+            return buildings_copy
+
+        # Phase 3: Single-step spatial join using centroids
+        logger.info("Phase 3: Performing centroid-based spatial join with census blocks")
+        try:
+            # Spatial join: centroid WITHIN census_block
+            joined = gpd.sjoin(
+                building_centroids,
+                census_blocks_proj[['GEOID20', 'geometry']],
+                how='left',
+                predicate='within'
+            )
+
+            # Count successful assignments
+            assigned_mask = joined['index_right'].notna()
+            assigned_count = assigned_mask.sum()
+            success_rate = assigned_count / len(buildings) * 100
+
+            logger.info(f"Spatial join results: {assigned_count}/{len(buildings)} buildings assigned "
+                        f"({success_rate:.1f}% success)")
+
+            # Log assignment distribution by census block
+            if assigned_count > 0:
+                block_distribution = joined[assigned_mask].groupby('GEOID20').size()
+                logger.info(
+                    f"Assignment distribution across {len(block_distribution)} census blocks:")
+                logger.info(f"  Average buildings per block: {block_distribution.mean():.1f}")
+                logger.info(f"  Max buildings in single block: {block_distribution.max()}")
+                logger.info(f"  Min buildings in single block: {block_distribution.min()}")
+
+                # Log top 5 blocks by building count
+                top_blocks = block_distribution.nlargest(5)
+                logger.info("Top 5 blocks by building count:")
+                for geoid, count in top_blocks.items():
+                    logger.info(f"  Block {geoid}: {count} buildings")
+
+        except Exception as e:
+            logger.error(f"Error during spatial join: {e}")
+            buildings_copy = buildings.copy()
+            buildings_copy['building_id'] = None
+            buildings_copy['census_block_id'] = None
+            return buildings_copy
+
+        # Phase 4: Generate building IDs and assign back to original buildings
+        logger.info("Phase 4: Generating building IDs and mapping back to original geometries")
+
+        # Prepare result DataFrame with original polygon geometries
         buildings_with_ids = buildings.copy()
         buildings_with_ids['building_id'] = pd.NA
         buildings_with_ids['census_block_id'] = pd.NA
 
-        # Store assignments as (original_building_index, state_fp, county_fp, block_ce)
-        all_assignments_list = []  # Using a list of tuples/dicts first
+        # Process assignments and generate IDs
+        all_assignments_list = []
+        assigned_buildings = joined[assigned_mask]
 
-        # --- Step 1: Assign buildings 'within' a census block ---
-        logger.info("Step 1: Attempting to assign buildings 'within' census blocks.")
-        # Use sjoin without suffixes since there are no duplicate column names
-        sjoined_within = gpd.sjoin(
-            buildings_proj,
-            census_blocks_proj[['STATEFP20', 'COUNTYFP20', 'BLOCKCE20', 'geometry']],
-            how='left',
-            predicate='within'
-        )
-
-        assigned_in_step1_indices = set()
-        # A building is 'within' if index_right is notna. Group by original building index.
-        for original_building_idx, group in sjoined_within[sjoined_within['index_right'].notna()].groupby(
-                level=0):
-            if not group.empty:
-                # If a building is somehow 'within' multiple blocks (geometrically unlikely for valid, non-overlapping blocks),
-                # sjoin would create multiple rows. We take the first one.
-                first_match = group.iloc[0]
+        if len(assigned_buildings) > 0:
+            # Create assignments list for ID generation
+            for idx, row in assigned_buildings.iterrows():
                 all_assignments_list.append({
-                    'original_building_idx': original_building_idx,
-                    'STATEFP20': first_match['STATEFP20'],
-                    'COUNTYFP20': first_match['COUNTYFP20'],
-                    'BLOCKCE20': first_match['BLOCKCE20']
+                    'original_building_idx': idx,
+                    'GEOID20': row['GEOID20']
                 })
-                assigned_in_step1_indices.add(original_building_idx)
 
-        logger.info(f"{len(assigned_in_step1_indices)} buildings assigned using 'within' predicate.")
-
-        # --- Identify unassigned after Step 1 and output ---
-        # These are indices from the original `buildings` DataFrame
-        unassigned_after_step1_original_indices = buildings.index.difference(
-            assigned_in_step1_indices)
-        unassigned_after_within_gdf = buildings.loc[unassigned_after_step1_original_indices].copy()
-
-        if not unassigned_after_within_gdf.empty:
-            logger.info(f"{len(unassigned_after_within_gdf)} buildings were not assigned in Step 1 ('within'). "
-                        "Saving to 'unassigned_after_within_join.geojson'.")
-            try:
-                self.output_dir.mkdir(parents=True, exist_ok=True)
-                # Save the original geometry and attributes, not projected
-                unassigned_after_within_gdf.to_file(
-                    self.output_dir / "04_unassigned_after_within_join.geojson", driver="GeoJSON")
-            except Exception as e:
-                logger.error(f"Failed to save 'unassigned_after_within_join.geojson': {e}")
-        elif not buildings.empty:  # Only log if there were buildings to process
-            logger.info("All buildings were assigned in Step 1 ('within').")
-
-        # --- Step 2: Assign remaining buildings using 'intersects' (first match) ---
-        if not unassigned_after_step1_original_indices.empty:
-            # Work with the projected geometries of the unassigned buildings
-            buildings_for_step2_proj = buildings_proj.loc[unassigned_after_step1_original_indices]
-            logger.info(
-                f"Step 2: Attempting to assign {len(buildings_for_step2_proj)} remaining buildings using 'intersects' (first match).")
-
-            sjoined_intersects = gpd.sjoin(
-                buildings_for_step2_proj,
-                census_blocks_proj[['STATEFP20', 'COUNTYFP20', 'BLOCKCE20', 'geometry']],
-                how='left',
-                predicate='intersects'
-            )
-            # Print to file the sjoined_intersects:
-            # sjoined_intersects.to_file(
-            #     self.output_dir
-            #     / "sjoined_intersects.geojson",
-            #     driver="GeoJSON")
-
-            assigned_in_step2_indices = set()
-            for original_building_idx, group in sjoined_intersects[sjoined_intersects['index_right'].notna(
-            )].groupby(level=0):
-                if not group.empty:
-                    first_intersect_match = group.iloc[0]
-                    all_assignments_list.append({
-                        'original_building_idx': original_building_idx,
-                        'STATEFP20': first_intersect_match['STATEFP20'],
-                        'COUNTYFP20': first_intersect_match['COUNTYFP20'],
-                        'BLOCKCE20': first_intersect_match['BLOCKCE20']
-                    })
-                    assigned_in_step2_indices.add(original_building_idx)
-
-            logger.info(
-                f"{len(assigned_in_step2_indices)} buildings assigned using 'intersects' (first match) predicate in Step 2.")
-        else:
-            logger.info("No buildings remaining for Step 2 ('intersects' join).")
-
-        # --- Consolidate all assignments and generate sequential IDs ---
-        if all_assignments_list:
+            # Generate sequential IDs within each block
             assignments_df = pd.DataFrame(all_assignments_list)
-
-            # Sort by original building index within each block for deterministic ID generation
             assignments_df = assignments_df.sort_values(
-                by=['STATEFP20', 'COUNTYFP20', 'BLOCKCE20', 'original_building_idx'])
-            assignments_df['sequential_id'] = assignments_df.groupby(
-                ['STATEFP20', 'COUNTYFP20', 'BLOCKCE20']).cumcount() + 1
+                by=['GEOID20', 'original_building_idx'])
+            assignments_df['sequential_id'] = assignments_df.groupby('GEOID20').cumcount() + 1
 
+            # Assign IDs back to original buildings
             for _, row in assignments_df.iterrows():
                 original_idx = row['original_building_idx']
-                state_fp = row['STATEFP20']
-                county_fp = row['COUNTYFP20']
-                block_ce = row['BLOCKCE20']
+                geoid = row['GEOID20']
                 seq_id = row['sequential_id']
 
-                building_id_val = f"{state_fp}{county_fp}{block_ce}{seq_id:04d}"
-                # Assign to the copy of the original DataFrame that we are modifying
+                building_id_val = f"{geoid}{seq_id:04d}"
                 buildings_with_ids.loc[original_idx, 'building_id'] = building_id_val
-                buildings_with_ids.loc[original_idx, 'census_block_id'] = block_ce
-            logger.info(f"Generated building IDs for {len(assignments_df)} buildings.")
+                buildings_with_ids.loc[original_idx, 'census_block_id'] = geoid
+
+            logger.info(f"Generated building IDs for {len(assignments_df)} buildings")
         else:
-            logger.info("No assignments made in either step.")
+            logger.warning("No buildings were successfully assigned to census blocks")
 
-        # --- Final removal of any buildings that are still unassigned ---
-        final_unassigned_mask = buildings_with_ids['building_id'].isna()
-        final_unassigned_count = final_unassigned_mask.sum()
+        # Phase 5: Handle unassigned buildings
+        unassigned_mask = buildings_with_ids['building_id'].isna()
+        unassigned_count = unassigned_mask.sum()
 
-        if final_unassigned_count > 0:
-            logger.warning(f"Found {final_unassigned_count} buildings that could not be assigned a census block "
-                           "after both 'within' and 'intersects' attempts. These will be removed.")
-            # Save the original geometry and attributes of finally unassigned buildings
-            unassigned_buildings_final = buildings_with_ids[final_unassigned_mask].copy()
+        if unassigned_count > 0:
+            logger.warning(f"Found {unassigned_count} buildings whose centroids fall outside "
+                           f"all census blocks ({unassigned_count/len(buildings)*100:.1f}%)")
+
+            # Save unassigned buildings for debugging
+            unassigned_buildings = buildings_with_ids[unassigned_mask].copy()
             try:
                 self.output_dir.mkdir(parents=True, exist_ok=True)
-                unassigned_buildings_final.to_file(
+                unassigned_buildings.to_file(
                     self.output_dir / "unassigned_buildings.geojson", driver="GeoJSON")
-                logger.info(
-                    f"Saved {len(unassigned_buildings_final)} finally unassigned buildings to 'unassigned_buildings.geojson'.")
+                logger.info(f"Saved {len(unassigned_buildings)} unassigned buildings "
+                            "to 'unassigned_buildings.geojson' for debugging")
             except Exception as e:
-                logger.error(f"Failed to save 'unassigned_buildings.geojson': {e}")
+                logger.error(f"Failed to save unassigned buildings: {e}")
 
-            buildings_with_ids = buildings_with_ids[~final_unassigned_mask].copy()
+            # Remove unassigned buildings from final result
+            buildings_with_ids = buildings_with_ids[~unassigned_mask].copy()
 
+        # Final summary
         total_assigned = len(buildings_with_ids)
         if len(buildings) > 0:
-            success_rate = total_assigned / len(buildings) * 100
-            logger.info(
-                f"Building ID assignment complete: {total_assigned}/{len(buildings)} buildings assigned ({success_rate:.1f}% success).")
+            final_success_rate = total_assigned / len(buildings) * 100
+            logger.info(f"Building ID assignment complete: {total_assigned}/{len(buildings)} "
+                        f"buildings assigned ({final_success_rate:.1f}% success)")
         else:
-            logger.info("Building ID assignment complete: 0/0 buildings assigned.")
+            logger.info("Building ID assignment complete: 0/0 buildings assigned")
 
         return buildings_with_ids
 
