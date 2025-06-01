@@ -94,7 +94,7 @@ class NRELDataHandler(DataHandler):
 
         # Output filenames are now constructed using self.dataset_output_dir (from
         # base DataHandler)
-        filename_base = f"NREL_Residential_typology_{state_fips}_{county_fips}"
+        filename_base = f"NREL_residential_typology_{state_fips}_{county_fips}"
         parquet_file = self.dataset_output_dir / f"{filename_base}.parquet"
         csv_file = self.dataset_output_dir / f"{filename_base}.csv"
 

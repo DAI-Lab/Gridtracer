@@ -507,11 +507,6 @@ class MicrosoftBuildingsDataHandler(DataHandler):
         """
         Process Microsoft building data for the region.
 
-        Parameters:
-        -----------
-        boundary_gdf : Optional[gpd.GeoDataFrame]
-            Boundary to use for clipping (if None, uses orchestrator boundary)
-
         Returns:
         --------
         Dict[str, any] : Dictionary containing processed data and file paths
@@ -527,35 +522,15 @@ class MicrosoftBuildingsDataHandler(DataHandler):
         self.logger.info(f"Processing Microsoft building data for {region_name}")
 
         try:
-            # Download state buildings
+            # The download() method already handles everything:
+            # 1. Check if file exists (return existing data)
+            # 2. Download building files
+            # 3. Filter to region
+            # 4. Save results
             download_results = self.download()
-            if 'error' in download_results:
-                return download_results
 
-            building_files = download_results['ms_buildings']
-
-            # Filter buildings to region
-            filtered_buildings = self._filter_buildings_to_region(building_files)
-
-            # Save filtered buildings
-            if len(filtered_buildings) > 0:
-                output_path = self.dataset_output_dir / "ms_buildings_output.geojson"
-                filtered_buildings.to_file(output_path, driver="GeoJSON")
-
-                self.logger.info(
-                    f"Saved {len(filtered_buildings)} filtered buildings to {output_path}"
-                )
-
-                return {
-                    'ms_buildings': filtered_buildings,
-                    'ms_buildings_filepath': output_path,
-                }
-            else:
-                self.logger.warning("No buildings found in region after filtering")
-                return {
-                    'ms_buildings': filtered_buildings,
-                    'ms_buildings_filepath': None,
-                }
+            self.logger.info("Microsoft Buildings processing complete")
+            return download_results
 
         except Exception as e:
             self.logger.error(f"Error processing Microsoft building data: {e}", exc_info=True)
