@@ -7,9 +7,8 @@ typology datasets.
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, OrderedDict
 
-import geopandas as gpd
 import pandas as pd
 from tqdm import tqdm
 
@@ -17,6 +16,12 @@ from syngrid.data_processor.data.base import DataHandler
 
 if TYPE_CHECKING:
     from syngrid.data_processor.workflow import WorkflowOrchestrator
+
+# Expected NREL vintage categories (based on actual NREL data)
+EXPECTED_VINTAGE_BINS = [
+    "<1940", "1940s", "1950s", "1960s", "1970s",
+    "1980s", "1990s", "2000s", "2010s"
+]
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -51,10 +56,10 @@ class NRELDataHandler(DataHandler):
             self.logger.info(f"NREL input file path set to: {self.input_file_path}")
         else:
             self.logger.warning(
-                "NREL input data path ('nrel_data') not found in configuration via orchestrator."
+                "NREL input data path ('nrel_data') not found in configuration."
             )
-            # Depending on requirements, you might raise an error here if it's essential
-            # raise ValueError("NREL input file path ('nrel_data') is required but not configured.")
+            # Depending on requirements, you might raise an error here if essential
+            # raise ValueError("NREL input file path ('nrel_data') required.")
 
     def _get_dataset_name(self) -> str:
         """
@@ -65,170 +70,218 @@ class NRELDataHandler(DataHandler):
         """
         return "NREL"
 
-    def _extract_nrel_data_for_region(self) -> Tuple[Optional[Path], Optional[Path]]:
+    def download(self) -> Dict[str, Optional[Path]]:
         """
-        Processes an existing NREL dataset file to extract data for the target region.
+        Process local NREL file and extract data for the target region.
+        Returns paths to processed files.
+        """
+        if not self._validate_inputs():
+            return {"parquet_path": None, "csv_path": None}
+
+        fips = self.orchestrator.get_fips_dict()
+        state_fips = fips['state_fips']
+        county_fips = fips['county_fips']
+
+        # Define output file paths
+        filename_base = f"NREL_residential_typology_{state_fips}_{county_fips}"
+        parquet_path = self.dataset_output_dir / f"{filename_base}.parquet"
+        csv_path = self.dataset_output_dir / f"{filename_base}.csv"
+
+        # Check if files already exist
+        if parquet_path.exists() and csv_path.exists():
+            region_name = f"{fips['state']}, {fips['county']}"
+            self.logger.info(f"NREL files already exist for {region_name}")
+            return {"parquet_path": parquet_path, "csv_path": csv_path}
+
+        # Extract data if files don't exist
+        return self._extract_and_save_nrel_data(parquet_path, csv_path)
+
+    def process(self) -> Dict[str, any]:
+        """
+        Process NREL data for the region with consistent output structure.
 
         Returns:
-            tuple: (parquet_path, csv_path) if successful, (None, None) otherwise.
+            Dict containing parquet_path, csv_path, data, and vintage_distribution
         """
-        if self.input_file_path is None:
-            self.logger.error("No input file path configured for NREL data processing.")
-            return None, None
+        # Standard result structure
+        result: Dict[str, any] = {
+            'parquet_path': None,
+            'csv_path': None,
+            'data': None,
+            'vintage_distribution': OrderedDict()
+        }
 
-        if not self.input_file_path.exists():
+        if not self._validate_inputs():
+            return result
+
+        # Get file paths (download if needed)
+        paths = self.download()
+        result.update(paths)
+
+        parquet_path = result['parquet_path']
+        if not parquet_path or not parquet_path.exists():
+            return result
+
+        # Compute vintage distribution
+        result['vintage_distribution'] = self.compute_vintage_distribution(parquet_path)
+
+        # Load data
+        try:
+            result['data'] = pd.read_parquet(parquet_path)
+            self.logger.info(f"Loaded {len(result['data'])} NREL records")
+        except Exception as e:
+            self.logger.error(f"Error loading NREL data: {e}")
+
+        return result
+
+    def _validate_inputs(self) -> bool:
+        """Validate required inputs for NREL processing."""
+        if not self.input_file_path or not self.input_file_path.exists():
             self.logger.error(f"NREL input file not found: {self.input_file_path}")
-            return None, None
+            return False
 
         fips = self.orchestrator.get_fips_dict()
         if not fips:
-            self.logger.error(
-                "FIPS dictionary not available from orchestrator for NREL processing.")
-            return None, None  # Or raise error
+            self.logger.error("FIPS dictionary not available")
+            return False
 
+        return True
+
+    def _extract_and_save_nrel_data(self, parquet_path: Path,
+                                    csv_path: Path) -> Dict[str, Optional[Path]]:
+        """Extract NREL data for the region and save to files."""
+        fips = self.orchestrator.get_fips_dict()
         state_fips = fips['state_fips']
         county_fips = fips['county_fips']
-        region_name_for_log = f"{fips['state']}, {fips['county']}"
+        region_name = f"{fips['state']}, {fips['county']}"
 
-        self.logger.info(f"Processing NREL data for {region_name_for_log}")
+        self.logger.info(f"Extracting NREL data for {region_name}")
 
-        # Output filenames are now constructed using self.dataset_output_dir (from
-        # base DataHandler)
-        filename_base = f"NREL_residential_typology_{state_fips}_{county_fips}"
-        parquet_file = self.dataset_output_dir / f"{filename_base}.parquet"
-        csv_file = self.dataset_output_dir / f"{filename_base}.csv"
-
-        if parquet_file.exists() and csv_file.exists():
-            self.logger.info(
-                f"NREL files already exist for {region_name_for_log} "
-                f"(FIPS: {state_fips}_{county_fips}) at {self.dataset_output_dir}"
-            )
-            return parquet_file, csv_file
+        str_state_fips = str(state_fips).zfill(2)
+        str_county_fips = str(county_fips).zfill(3)
 
         county_data_frames = []
+        chunk_size = 100_000
+
         try:
-            chunk_size = 100_000
-
+            # Get total lines for progress bar
             try:
-                with open(self.input_file_path, 'r') as f_count:
-                    total_lines = sum(1 for _ in f_count) - 1
-                if total_lines < 0:
-                    total_lines = 0
-                total_chunks = (total_lines // chunk_size) + \
-                    (1 if total_lines % chunk_size > 0 and total_lines > 0 else 0)
+                with open(self.input_file_path, 'r') as f:
+                    total_lines = sum(1 for _ in f) - 1
+                total_chunks = max(
+                    1, (total_lines // chunk_size) + (1 if total_lines % chunk_size > 0 else 0)
+                )
             except Exception:
-                self.logger.warning(
-                    "Could not determine total lines for NREL progress bar.",
-                    exc_info=True)
                 total_chunks = None
+                self.logger.warning("Could not determine file size for progress tracking")
 
-            with tqdm(total=total_chunks, desc=f"Processing NREL for {region_name_for_log}", unit="chunk") as pbar:
-                for chunk in pd.read_csv(self.input_file_path, sep="\t",
-                                         chunksize=chunk_size, low_memory=False):
+            # Process file in chunks
+            with tqdm(
+                total=total_chunks, desc=f"Processing NREL for {region_name}", unit="chunk"
+            ) as pbar:
+                for chunk in pd.read_csv(
+                    self.input_file_path, sep="\t", chunksize=chunk_size, low_memory=False
+                ):
+
                     if 'in.county' not in chunk.columns:
-                        self.logger.error("'in.county' column not found in NREL data chunk.")
                         pbar.update(1)
                         continue
 
-                    str_state_fips = str(state_fips).zfill(2)
-                    str_county_fips = str(county_fips).zfill(3)
-
+                    # Filter for target county
                     county_ids_no_g = chunk['in.county'].astype(str).str.removeprefix('G')
 
                     state_match = pd.Series(False, index=county_ids_no_g.index)
-                    valid_for_state_slice = county_ids_no_g.str.len() >= 2
-                    state_match[valid_for_state_slice] = county_ids_no_g[valid_for_state_slice].str[:2] == str_state_fips
+                    valid_state = county_ids_no_g.str.len() >= 2
+                    state_match[valid_state] = (
+                        county_ids_no_g[valid_state].str[:2] == str_state_fips
+                    )
 
                     county_match = pd.Series(False, index=county_ids_no_g.index)
-                    valid_for_county_slice = county_ids_no_g.str.len() >= 6
-                    county_match[valid_for_county_slice] = county_ids_no_g[valid_for_county_slice].str[3:6] == str_county_fips
+                    valid_county = county_ids_no_g.str.len() >= 6
+                    county_match[valid_county] = (
+                        county_ids_no_g[valid_county].str[3:6] == str_county_fips
+                    )
 
                     county_chunk = chunk[state_match & county_match]
 
                     if not county_chunk.empty:
                         county_data_frames.append(county_chunk)
                         pbar.set_postfix_str(
-                            f"Found {len(county_chunk)} rows, total {sum(len(df) for df in county_data_frames)}",
-                            refresh=True)
+                            f"Found {sum(len(df) for df in county_data_frames)} total rows"
+                        )
+
                     pbar.update(1)
 
+            # Save results if data found
             if county_data_frames:
                 county_data = pd.concat(county_data_frames, ignore_index=True)
-                rows_count = len(county_data)
-                self.logger.info(f"Saving {rows_count} NREL rows for {region_name_for_log}")
-                county_data.to_parquet(parquet_file, index=False)
-                county_data.to_csv(csv_file, index=False)
-                self.logger.info(f"Saved NREL data to: {parquet_file} and {csv_file}")
-                return parquet_file, csv_file
+                county_data.to_parquet(parquet_path, index=False)
+                county_data.to_csv(csv_path, index=False)
+
+                self.logger.info(f"Saved {len(county_data)} NREL records to {parquet_path}")
+                return {"parquet_path": parquet_path, "csv_path": csv_path}
             else:
-                self.logger.warning(
-                    f"No NREL data found for {region_name_for_log} (FIPS: {state_fips}_{county_fips})")
-                return None, None
+                self.logger.warning(f"No NREL data found for {region_name}")
+                return {"parquet_path": None, "csv_path": None}
+
         except Exception as e:
-            self.logger.error(
-                f"Error processing NREL file {self.input_file_path}: {e}",
-                exc_info=True)
-            return None, None
+            self.logger.error(f"Error extracting NREL data: {e}", exc_info=True)
+            return {"parquet_path": None, "csv_path": None}
 
-    def download(self) -> Dict[str, Optional[Path]]:
+    def compute_vintage_distribution(
+        self,
+        parquet_path: Path,
+        vintage_col: str = "in.vintage",
+    ) -> OrderedDict[str, float]:
         """
-        Abstract download method implementation for NRELDataHandler.
-        For NREL, "download" means processing the local file.
-        This method calls the main data extraction logic.
+        Weighted percentage distribution of NREL building‐stock 'vintage' bins.
+
+        Parameters
+        ----------
+        parquet_path : Path
+            Path to parquet file with NREL data for the region
+        vintage_col : str, default ``"in.vintage"``
+            Column holding the construction-period label
+        Returns
+        -------
+        OrderedDict[str, float]
+            Keys are the nine bins defined in ``EXPECTED_VINTAGE_BINS``. Values are percentages
         """
-        self.logger.debug(
-            "NRELDataHandler.download() called, deferring to _extract_nrel_data_for_region.")
-        parquet_path, csv_path = self._extract_nrel_data_for_region()
-        return {
-            "parquet_path": parquet_path,
-            "csv_path": csv_path
+        df = pd.read_parquet(parquet_path)
+
+        if vintage_col not in df.columns:
+            msg = f"Column '{vintage_col}' not found – cannot build vintage distribution."
+            logger.warning(msg)
+            return OrderedDict((k, 0.0) for k in EXPECTED_VINTAGE_BINS)
+
+        # Map NREL vintage labels directly to our bins
+        nrel_to_bins_mapping = {
+            '<1940': '<1940',
+            '1940s': '1940s',
+            '1950s': '1950s',
+            '1960s': '1960s',
+            '1970s': '1970s',
+            '1980s': '1980s',
+            '1990s': '1990s',
+            '2000s': '2000s',
+            '2010s': '2010s'
         }
 
-    def process(self, boundary_gdf: Optional[gpd.GeoDataFrame] = None) -> Dict[str, any]:
-        """
-        Process the NREL data for the region.
+        # Map each record to a bin using direct label mapping
+        bin_labels = df[vintage_col].map(nrel_to_bins_mapping)
+        bin_labels = bin_labels.fillna("Unknown")
 
-        Args:
-            boundary_gdf (Optional[gpd.GeoDataFrame]): Not used by this method as NREL data
-                                                     is tabular and filtered by FIPS codes.
-        Returns:
-            dict: Dictionary containing:
-                - 'parquet_path': Path to the Parquet file for the target region.
-                - 'csv_path': Path to the CSV file for the target region.
-                - 'data': Pandas DataFrame with the NREL data if successfully loaded.
-        """
+        # Count records in each bin
+        counts = bin_labels.value_counts(dropna=False)
 
-        fips = self.orchestrator.get_fips_dict()
-        if not fips:  # Redundant if base class validated, but safe
-            self.logger.error(
-                "FIPS dictionary not available from orchestrator for NREL processing.")
-            raise ValueError("FIPS dictionary missing for NREL processing.")
+        # Ensure all expected bins are present (fill missing with 0)
+        counts = counts.reindex(EXPECTED_VINTAGE_BINS, fill_value=0)
 
-        region_name_for_log = f"{fips['state']}, {fips['county']}"
-        self.logger.info(f"Processing NREL data for {region_name_for_log}")
+        # Convert to percentages
+        total = counts.sum()
+        if total > 0:
+            perc = (counts / total).round(3)
+        else:
+            perc = pd.Series(0.0, index=EXPECTED_VINTAGE_BINS)
 
-        paths = self.download()  # Calls the refined download which calls _extract_nrel_data
-        parquet_path = paths.get("parquet_path")
-        csv_path = paths.get("csv_path")
-
-        result: Dict[str, any] = {
-            'parquet_path': parquet_path,
-            'csv_path': csv_path,
-            'data': None
-        }
-
-        if parquet_path and parquet_path.exists():
-            try:
-                data = pd.read_parquet(parquet_path)
-                result['data'] = data
-                self.logger.info(
-                    f"Successfully loaded {len(data)} rows of processed NREL data from {parquet_path}")
-            except Exception as e:
-                self.logger.error(
-                    f"Error loading processed NREL data from Parquet {parquet_path}: {e}",
-                    exc_info=True)
-        elif parquet_path:  # Path exists but file doesn't - indicates processing might have failed to write
-            self.logger.warning(
-                f"NREL Parquet file path exists ({parquet_path}) but file not found. Data not loaded.")
-
-        return result
+        return OrderedDict(perc.to_dict())

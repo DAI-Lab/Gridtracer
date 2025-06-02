@@ -2,6 +2,7 @@ import csv
 import logging
 import os
 import urllib.request
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -235,8 +236,9 @@ class WorkflowOrchestrator:
         Raises:
             RuntimeError: If the output directory has not been initialized.
         """
-        self.logger.warning(
-            "get_path_in_output_dir is deprecated. Use get_dataset_specific_output_directory().joinpath() instead.")
+        warnings.warn(
+            "get_path_in_output_dir is deprecated. Use get_dataset_specific_output_directory().joinpath() instead.",
+            DeprecationWarning)
         if not self.regional_base_output_dir:  # Check renamed attribute
             self.logger.error("Output directory accessed before initialization.")
             raise RuntimeError("Output directory has not been initialized.")
