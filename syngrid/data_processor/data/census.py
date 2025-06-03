@@ -207,6 +207,25 @@ class CensusDataHandler(DataHandler):
                 processed_target_blocks_gdf = county_blocks_gdf_filtered
                 blocks_filename_suffix = "_blocks"
 
+            # Filter out non-polygon geometries before saving
+            if processed_target_blocks_gdf is not None and not processed_target_blocks_gdf.empty:
+                # Filter out non-polygon geometries before saving
+                original_count = len(processed_target_blocks_gdf)
+
+                # Keep only Polygon and MultiPolygon geometries
+                processed_target_blocks_gdf = processed_target_blocks_gdf[
+                    processed_target_blocks_gdf.geometry.geom_type.isin(['Polygon'])
+                ].copy()
+
+                final_count = len(processed_target_blocks_gdf)
+                dropped_count = original_count - final_count
+
+                if dropped_count > 0:
+                    self.logger.info(
+                        f"Filtered out {dropped_count} non-polygon blocks from clipping artifacts")
+                    self.logger.info(
+                        f"Retained {final_count}/{original_count} valid polygon blocks")
+
             if processed_target_blocks_gdf is not None and not processed_target_blocks_gdf.empty:
                 results['target_region_blocks'] = processed_target_blocks_gdf
                 results['target_region_blocks_filepath'] = self.dataset_output_dir / \
