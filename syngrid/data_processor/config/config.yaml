@@ -8,7 +8,7 @@
 region:
   state: "MA" # Valid abbreviation
   county: "Middlesex County" # Required
-  county_subdivision: "Cambridge city" # optional, if not provided, all subdivisions will be downloaded
+  county_subdivision: "" # optional, if not provided, all subdivisions will be downloaded
   lookup_url: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
 
 # Base output directory
@@ -22,25 +22,8 @@ input_data:
   
   # NREL data paths
   nrel_data: "/Users/magic-rabbit/Documents/MA-data/NREL_Residential_typology.tsv"
-  
-  # NLCD landuse data path
-  nlcd_landuse: "/Users/magic-rabbit/Documents/MA-data/nlcd_2023.tif"
-  
-  # Census data paths
-  census_population: "ZensusPopulation/ZensusPopulation.shp" # TODO: Add path to census population data
-  census_buildings: "ZensusGebaude/ZensusGebaude.shp" # TODO: Add path to census buildings data
-  
-
-# Overpass API configuration
-overpass:
-  api_url: "http://overpass-api.de/api/interpreter"
-  timeout: 500  # Timeout in seconds
 
 # Processing parameters
 processing:
   distance_threshold_meters: 10  # Distance threshold for deduplication
   crs: "epsg:4326"  # Coordinate reference system
-
-# API keys
-api_keys:
-  census_api_key: ""  # Replace with your actual API key
