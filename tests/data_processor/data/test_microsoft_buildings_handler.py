@@ -252,8 +252,8 @@ def test_full_microsoft_buildings_process(
 
     # If buildings were found, verify output file exists
     if total_buildings > 0:
-        assert 'buildings_filepath' in result
-        buildings_filepath = result['buildings_filepath']
+        assert 'ms_buildings_filepath' in result
+        buildings_filepath = result['ms_buildings_filepath']
         if buildings_filepath:
             assert Path(buildings_filepath).exists()
 

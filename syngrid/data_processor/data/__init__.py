@@ -7,7 +7,6 @@ NLCD, and OpenStreetMap.
 
 from syngrid.data_processor.data.base import DataHandler
 from syngrid.data_processor.data.census import CensusDataHandler
-from syngrid.data_processor.data.census_pl import CensusPLDataHandler
 from syngrid.data_processor.data.nrel import NRELDataHandler
 from syngrid.data_processor.data.osm.osm_data_handler import OSMDataHandler
 from syngrid.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
@@ -15,7 +14,6 @@ from syngrid.data_processor.data.osm.road_network_builder import RoadNetworkBuil
 __all__ = [
     'DataHandler',
     'CensusDataHandler',
-    'CensusPLDataHandler',
     'NRELDataHandler',
     'OSMDataHandler',
     'RoadNetworkBuilder',

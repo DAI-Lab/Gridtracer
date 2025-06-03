@@ -6,7 +6,6 @@ for creating routable road networks from OSM data.
 """
 
 import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import geopandas as gpd
@@ -16,25 +15,10 @@ from shapely.geometry import LineString
 
 from syngrid.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
 
-# Import WorkflowOrchestrator for type hinting if needed, or mock it directly
-# from syngrid.data_processor.workflow import WorkflowOrchestrator
-
-
-@pytest.fixture
-def fips_dict():
-    """Create a mock FIPS dict for testing."""
-    return {
-        'state': 'MA',
-        'state_fips': '25',
-        'county': 'Suffolk',
-        'county_fips': '025',
-    }
-
 
 @pytest.fixture
 def mock_osm_data():
     """Create mock OSM data for testing."""
-    # Create a simple mock network with two nodes and an edge
     geometries = [LineString([(0, 0), (1, 1)])]
     data = {
         'osm_id': [12345],
@@ -59,23 +43,31 @@ def mock_osm_data():
 
 
 @pytest.fixture
-def mock_orchestrator(fips_dict, tmp_path, mock_osm_data):
-    """Creates a mock WorkflowOrchestrator."""
-    orchestrator = MagicMock()
-    orchestrator.get_fips_dict.return_value = fips_dict
-    # Make dataset_output_dir a Path object as expected by the builder
-    orchestrator.get_dataset_specific_output_directory.return_value = Path(
-        tmp_path) / "STREET_NETWORK"
+def mock_orchestrator_for_road_network(orchestrator_with_fips, temp_output_dir, mock_osm_data):
+    """Creates a mock WorkflowOrchestrator for road network testing."""
+    orchestrator = orchestrator_with_fips
+
+    # Override the get_dataset_specific_output_directory method for road network
+    original_get_dir = orchestrator.get_dataset_specific_output_directory
+
+    def mock_get_dir(dataset_name):
+        if dataset_name == "STREET_NETWORK":
+            return temp_output_dir / "STREET_NETWORK"
+        return original_get_dir(dataset_name)
+
+    orchestrator.get_dataset_specific_output_directory = mock_get_dir
+
     # Setup the mock OSM parser to be returned by the orchestrator
     mock_osm_parser = MagicMock()
     nodes, edges = mock_osm_data
     mock_osm_parser.get_network.return_value = (nodes, edges)
-    orchestrator.get_osm_parser.return_value = mock_osm_parser
+    orchestrator.get_osm_parser = MagicMock(return_value=mock_osm_parser)
+
     return orchestrator
 
 
 @pytest.fixture
-def road_network_builder(mock_orchestrator, tmp_path):
+def road_network_builder(mock_orchestrator_for_road_network):
     """Create a RoadNetworkBuilder with a mocked orchestrator and config."""
     with patch('syngrid.data_processor.data.osm.road_network_builder.yaml.safe_load') as mock_yaml:
         # Mock the YAML config for osm2po_config.yaml
@@ -90,13 +82,14 @@ def road_network_builder(mock_orchestrator, tmp_path):
         }
 
         # The RoadNetworkBuilder now takes the orchestrator directly
-        builder = RoadNetworkBuilder(orchestrator=mock_orchestrator)
+        builder = RoadNetworkBuilder(orchestrator=mock_orchestrator_for_road_network)
 
-        # Ensure dataset_output_dir is set correctly for tests if DataHandler doesn't set it
-        # based on orchestrator.get_dataset_specific_output_directory during super().__init__
-        # This might be redundant if DataHandler's __init__ correctly uses the orchestrator
-        builder.dataset_output_dir = mock_orchestrator.get_dataset_specific_output_directory(
-            "STREET_NETWORK")
+        # Ensure dataset_output_dir is set correctly for tests
+        builder.dataset_output_dir = (
+            mock_orchestrator_for_road_network.get_dataset_specific_output_directory(
+                "STREET_NETWORK"
+            )
+        )
         builder.dataset_output_dir.mkdir(parents=True, exist_ok=True)
 
         return builder
@@ -152,8 +145,7 @@ def test_flags_to_int(road_network_builder):
     assert road_network_builder._flags_to_int({'car', 'bike', 'foot'}) == 7  # 2^0 + 2^1 + 2^2
 
 
-# No need to patch OSM globally if the orchestrator provides the mock parser
-def test_build_network(road_network_builder, mock_osm_data, tmp_path):
+def test_build_network(road_network_builder, mock_osm_data):
     """Test the build_network method."""
     # The mock_orchestrator in road_network_builder fixture already provides a mock OSM parser
     # that returns mock_osm_data.
@@ -193,17 +185,12 @@ def test_build_network(road_network_builder, mock_osm_data, tmp_path):
         assert "CREATE INDEX" in sql_content
 
 
-def test_process_method(road_network_builder, mock_osm_data, tmp_path):
+def test_process_method(road_network_builder, mock_osm_data, sample_boundary_gdf):
     """Test the process method."""
     # The mock_orchestrator already provides the mock OSM parser
 
-    # Create a boundary for testing clipping
-    boundary_data = {
-        'geometry': [LineString([(0, 0), (1, 1), (1, 0)]).buffer(0.1)]
-    }
-    boundary_gdf = gpd.GeoDataFrame(boundary_data, crs="EPSG:4326")
-
-    # No need to set osm_pbf_file in config, orchestrator handles it.
+    # Use the shared boundary fixture instead of creating our own
+    boundary_gdf = sample_boundary_gdf
 
     # Call process method
     results = road_network_builder.process(boundary_gdf=boundary_gdf)
@@ -249,6 +236,17 @@ def test_process_and_write_edges(road_network_builder, mock_osm_data):
 def test_get_dataset_name(road_network_builder):
     """Test the _get_dataset_name method."""
     assert road_network_builder._get_dataset_name() == "STREET_NETWORK"
+
+
+def test_fips_integration(road_network_builder):
+    """Test that the road network builder can access FIPS data from the orchestrator."""
+    fips_dict = road_network_builder.orchestrator.get_fips_dict()
+
+    # Verify FIPS data is accessible and has expected structure
+    assert fips_dict is not None
+    assert 'state' in fips_dict
+    assert 'county' in fips_dict
+    assert fips_dict['state'] == 'MA'  # From the shared fixture
 
 
 @patch('syngrid.data_processor.data.osm.road_network_builder.logger')

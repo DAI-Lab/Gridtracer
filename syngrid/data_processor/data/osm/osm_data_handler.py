@@ -83,7 +83,9 @@ class OSMDataHandler(DataHandler):
                 self.boundary_polygon_for_filtering = boundary_gdf.geometry.iloc[0]
 
             logger.info(
-                "Specific boundary polygon for post-filtering set successfully for OSMDataHandler.")
+                "Specific boundary polygon for post-filtering set successfully for "
+                "OSMDataHandler."
+            )
             return True
         except Exception as e:
             logger.error(f"Error setting specific boundary for OSMDataHandler: {e}", exc_info=True)
@@ -193,6 +195,13 @@ class OSMDataHandler(DataHandler):
         """
         Extract power infrastructure using the shared pyrosm parser from the orchestrator.
         """
+        if osm_parser is None:
+            logger.error(
+                "OSM parser not available from orchestrator. "
+                "Cannot extract power infrastructure."
+            )
+            return None, None
+
         power_tags = ["transformer", "substation", "pole"]
         # Extract power features
         power_features = osm_parser.get_data_by_custom_criteria(
@@ -259,7 +268,7 @@ class OSMDataHandler(DataHandler):
 
         if power_features is None or power_features.empty:
             logger.warning("No power infrastructure found in OpenStreetMap")
-            return None
+            return None, None
         else:
             deduplicated_power_features = self.deduplicate_power_features(filtered_features)
             # Save power features
@@ -267,7 +276,9 @@ class OSMDataHandler(DataHandler):
             deduplicated_power_features.to_file(power_filepath, driver="GeoJSON")
 
             logger.info(
-                f"Successfully extracted {len(deduplicated_power_features)} power features with pyrosm")
+                f"Successfully extracted {len(deduplicated_power_features)} power features "
+                f"with pyrosm"
+            )
             return deduplicated_power_features, power_filepath
 
     def extract_buildings(self, osm_parser: OSM):
@@ -279,7 +290,8 @@ class OSMDataHandler(DataHandler):
         boundary_polygon_for_filtering is set on this handler.
 
         Returns:
-            tuple: (GeoDataFrame of buildings, Path to saved GeoJSON file) or (None, None) on failure.
+            tuple: (GeoDataFrame of buildings, Path to saved GeoJSON file) or (None, None)
+                on failure.
         """
         if osm_parser is None:
             logger.error("OSM parser not available from orchestrator. Cannot extract buildings.")
@@ -407,6 +419,9 @@ class OSMDataHandler(DataHandler):
         Returns:
             tuple: (GeoDataFrame of POIs, Path to saved file)
         """
+        if osm_parser is None:
+            logger.error("OSM parser not available from orchestrator. Cannot extract POIs.")
+            return None, None
 
         logger.info("Extracting POIs")
 
@@ -476,8 +491,11 @@ class OSMDataHandler(DataHandler):
         Returns:
             tuple: (GeoDataFrame of filtered landuse, Path to saved file)
         """
-        try:
+        if osm_parser is None:
+            logger.error("OSM parser not available from orchestrator. Cannot extract landuse.")
+            return None, None
 
+        try:
             relevant_tags = set([
                 "landuse",
                 "name"
