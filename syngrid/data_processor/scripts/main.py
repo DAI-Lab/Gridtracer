@@ -72,7 +72,6 @@ def run_pipeline_v2():
                 f"NREL data processing complete. Parquet at: {nrel_data['parquet_path']}")
         else:
             logger.warning("NREL data processing did not yield a parquet path.")
-        logger.info(f"NREL data: {list(nrel_data.keys())}")
 
         # --- STEP 3: Extract OSM Data ---
         osm_handler = OSMDataHandler(orchestrator)
@@ -97,22 +96,17 @@ def run_pipeline_v2():
         # # --- STEP 4: Building Classification Heuristic ---
         building_classification_heuristic = BuildingHeuristicsProcessor(
             orchestrator.base_output_dir)
-        building_classification_data = building_classification_heuristic.process(
-            census_data, osm_data, microsoft_buildings_data)
-        if building_classification_data is not None and not building_classification_data.empty:
-            logger.info(
-                f"Building classification complete. Processed {len(building_classification_data)} buildings."
-            )
-        else:
-            logger.warning("Building classification did not yield a result.")
+        #
+        building_classification_heuristic.process(
+            census_data, osm_data, microsoft_buildings_data, nrel_data["vintage_distribution"])
 
         # --- STEP 5: ROUTABLE ROAD NETWORK GENERATION ---
         road_network_builder = RoadNetworkBuilder(orchestrator=orchestrator)
         road_network_results = road_network_builder.process(
             boundary_gdf=census_data['target_region_boundary'], plot=True)
-        if road_network_results.get('network_gpkg'):
+        if road_network_results.get('geojson_file'):
             logger.info(
-                f"Road network generation complete. Network GPKG at: {road_network_results['network_gpkg']}"
+                f"Road network generation complete. Network GPKG at: {road_network_results['geojson_file']}"
             )
         else:
             logger.warning("Road network generation did not yield a GPKG path.")
