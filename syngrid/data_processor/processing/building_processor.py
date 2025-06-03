@@ -29,7 +29,7 @@ class BuildingHeuristicsProcessor:
         output_dir : str
             Path to output directory where processed data will be saved
         """
-        self.output_dir = Path(output_dir)
+        self.dataset_output_dir = Path(output_dir)
 
     def process(self, census_data: Dict, osm_data: Dict,
                 microsoft_buildings_data: Dict, nrel_vintage_distribution: Dict) -> Dict[str, str]:
@@ -71,20 +71,22 @@ class BuildingHeuristicsProcessor:
         # Step 3: Calculate free walls for all buildings
         logger.info("Step 3: Calculating free walls")
         all_buildings = self.calculate_free_walls(all_buildings)
-        all_buildings.to_file(self.output_dir / "03_all_buildings_with_free_walls.geojson")
+        all_buildings.to_file(self.dataset_output_dir / "03_all_buildings_with_free_walls.geojson")
 
         # Step 4: Calculate floors
         logger.info("Step 4: Calculating floors")
         all_buildings = self.calculate_floors(
             all_buildings, microsoft_buildings_data.get('ms_buildings'))
-        all_buildings.to_file(self.output_dir / "04_all_buildings_with_floors.geojson")
+        all_buildings.to_file(self.dataset_output_dir / "04_all_buildings_with_floors.geojson")
 
         # Step 5: Assign building IDs
         logger.info("Step 5: Assigning building IDs")
         all_buildings = self._assign_building_id(
             all_buildings, census_data.get('target_region_blocks'))
 
-        all_buildings.to_file(self.output_dir / "05_all_buildings_with_building_id.geojson")
+        all_buildings.to_file(
+            self.dataset_output_dir
+            / "05_all_buildings_with_building_id.geojson")
 
         # Split buildings by use after ID assignment
         residential = all_buildings[all_buildings['building_use'] == 'residential'].copy()
@@ -99,7 +101,7 @@ class BuildingHeuristicsProcessor:
                 residential,
                 census_data.get('target_region_blocks')
             )
-            residential.to_file(self.output_dir
+            residential.to_file(self.dataset_output_dir
                                 / "06_residential_buildings_with_building_type.geojson")
             # Allot occupants based on census
             residential = self._allot_occupants(
@@ -112,14 +114,14 @@ class BuildingHeuristicsProcessor:
                 residential,
                 nrel_vintage_distribution
             )
-            residential.to_file(self.output_dir
+            residential.to_file(self.dataset_output_dir
                                 / "07_residential_buildings_with_construction_year.geojson")
 
             if len(residential) > 0:
                 # Write residential output
                 residential_output_path = self.write_buildings_output(
                     residential,
-                    self.output_dir,
+                    self.dataset_output_dir,
                     'residential_buildings.shp',
                     'residential'
                 )
@@ -134,7 +136,7 @@ class BuildingHeuristicsProcessor:
                 # Write non-residential output
                 other_output_path = self.write_buildings_output(
                     other,
-                    self.output_dir,
+                    self.dataset_output_dir,
                     'non_residential_buildings.shp',
                     'non_residential'
                 )
@@ -1384,9 +1386,9 @@ class BuildingHeuristicsProcessor:
             buildings_copy['building_id'] = None
             buildings_copy['census_block_id'] = None
             if not buildings_copy.empty:
-                self.output_dir.mkdir(parents=True, exist_ok=True)
+                self.dataset_output_dir.mkdir(parents=True, exist_ok=True)
                 buildings_copy.to_file(
-                    self.output_dir / "unassigned_buildings.geojson", driver="GeoJSON")
+                    self.dataset_output_dir / "5_buildings_unassigned_to_blocks.geojson", driver="GeoJSON")
             return buildings_copy
 
         required_cols = ['GEOID20', 'geometry']
@@ -1398,9 +1400,9 @@ class BuildingHeuristicsProcessor:
             buildings_copy['building_id'] = None
             buildings_copy['census_block_id'] = None
             if not buildings_copy.empty:
-                self.output_dir.mkdir(parents=True, exist_ok=True)
+                self.dataset_output_dir.mkdir(parents=True, exist_ok=True)
                 buildings_copy.to_file(
-                    self.output_dir / "unassigned_buildings.geojson", driver="GeoJSON")
+                    self.dataset_output_dir / "5_buildings_unassigned_to_blocks.geojson", driver="GeoJSON")
             return buildings_copy
 
         logger.info("Starting centroid-based building ID assignment")
@@ -1420,9 +1422,9 @@ class BuildingHeuristicsProcessor:
             buildings_copy['building_id'] = None
             buildings_copy['census_block_id'] = None
             if not buildings_copy.empty:
-                self.output_dir.mkdir(parents=True, exist_ok=True)
+                self.dataset_output_dir.mkdir(parents=True, exist_ok=True)
                 buildings_copy.to_file(
-                    self.output_dir / "unassigned_buildings.geojson", driver="GeoJSON")
+                    self.dataset_output_dir / "unassigned_buildings.geojson", driver="GeoJSON")
             return buildings_copy
 
         # Phase 2: Calculate building centroids for spatial matching
@@ -1546,9 +1548,9 @@ class BuildingHeuristicsProcessor:
             # Save unassigned buildings for debugging
             unassigned_buildings = buildings_with_ids[unassigned_mask].copy()
             try:
-                self.output_dir.mkdir(parents=True, exist_ok=True)
+                self.dataset_output_dir.mkdir(parents=True, exist_ok=True)
                 unassigned_buildings.to_file(
-                    self.output_dir / "unassigned_buildings.geojson", driver="GeoJSON")
+                    self.dataset_output_dir / "unassigned_buildings.geojson", driver="GeoJSON")
                 logger.info(f"Saved {len(unassigned_buildings)} unassigned buildings "
                             "to 'unassigned_buildings.geojson' for debugging")
             except Exception as e:
@@ -1922,10 +1924,6 @@ class BuildingHeuristicsProcessor:
 
         buildings_with_floors = self._calculate_floor_height_from_ms_buildings(
             buildings_without_height, microsoft_buildings)
-        buildings_with_floors.to_file(
-            self.output_dir
-            / "ms_buildings_with_floors_fucntion_output.geojson",
-            driver='GeoJSON')
 
         # Step 1: Extract height and floor information from OSM tags
         logger.info("Step 2: Extracting height and floors from OSM tags")
@@ -2031,6 +2029,8 @@ class BuildingHeuristicsProcessor:
         str : Path to output file
         """
         # Create output path
+        # Add SHP FOLDER TO OUTPUT PATH
+        output_dir = output_dir / "SHP"
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = str(output_dir / filename)
@@ -2059,61 +2059,6 @@ class BuildingHeuristicsProcessor:
         output_buildings.to_file(output_path)
 
         return output_path
-
-    def merge_building_layers(self, residential_path: str,
-                              other_path: str,
-                              output_dir: Union[str, Path],
-                              filename: str) -> str:
-        """
-        Merges residential and non-residential building layers into a single shapefile.
-
-        Parameters:
-        -----------
-        residential_path : str
-            Path to residential buildings shapefile
-        other_path : str
-            Path to non-residential buildings shapefile
-        output_dir : str or Path
-            Path to output directory
-        filename : str
-            Output filename
-
-        Returns:
-        --------
-        str : Path to merged output file
-        """
-        # Create output path
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_dir / filename)
-
-        # Read input shapefiles
-        residential = gpd.read_file(residential_path)
-        other = gpd.read_file(other_path)
-
-        # Merge GeoDataFrames
-        merged = gpd.GeoDataFrame(pd.concat([residential, other], ignore_index=True))
-
-        # Write output shapefile
-        logger.info(f"Writing merged buildings ({len(merged)} features) to {output_path}")
-        merged.to_file(output_path)
-
-        return output_path
-
-    def _get_local_crs(self, gdf):
-        """Get appropriate local CRS for accurate area calculations"""
-        # Calculate centroid of all geometries
-        lon, lat = gdf.unary_union.centroid.x, gdf.unary_union.centroid.y
-
-        # For North America, determine UTM zone
-        utm_zone = int(np.floor((lon + 180) / 6) + 1)
-        hemisphere = 'north' if lat >= 0 else 'south'
-
-        # Return UTM CRS (EPSG code format)
-        if hemisphere == 'north':
-            return f"EPSG:{32600+utm_zone}"
-        else:
-            return f"EPSG:{32700+utm_zone}"
 
     def _calculate_floor_area(self, buildings):
         """

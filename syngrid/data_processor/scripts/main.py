@@ -95,7 +95,7 @@ def run_pipeline_v2():
 
         # # --- STEP 4: Building Classification Heuristic ---
         building_classification_heuristic = BuildingHeuristicsProcessor(
-            orchestrator.base_output_dir)
+            orchestrator.get_dataset_specific_output_directory("BUILDINGS_OUTPUT"))
         #
         building_classification_heuristic.process(
             census_data, osm_data, microsoft_buildings_data, nrel_data["vintage_distribution"])
