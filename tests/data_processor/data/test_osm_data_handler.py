@@ -609,7 +609,7 @@ class TestPowerInfrastructureExtraction:
         assert filepath.name == "power.geojson"
 
         # Verify raw file was also saved
-        raw_filepath = osm_data_handler.dataset_output_dir / "raw_power.geojson"
+        raw_filepath = osm_data_handler.dataset_output_dir / "raw" / "raw_power.geojson"
         assert raw_filepath.exists()
 
     def test_extract_power_infrastructure_filtering(

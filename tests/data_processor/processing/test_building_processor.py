@@ -47,8 +47,8 @@ def sample_isolated_buildings() -> gpd.GeoDataFrame:
 
 
 @pytest.fixture
-def sample_townhouse_cluster() -> gpd.GeoDataFrame:
-    """Create a linear arrangement of touching buildings (townhouses)."""
+def sample_terraced_house_cluster() -> gpd.GeoDataFrame:
+    """Create a linear arrangement of touching buildings (terraced houses)."""
     # 5 connected buildings in a row, each 8x15 meters (120 m²)
     buildings_data = {
         'id': [1, 2, 3, 4, 5],
@@ -92,7 +92,7 @@ def sample_mixed_neighborhood() -> gpd.GeoDataFrame:
         'id': list(range(1, 11)),
         'floor_area': [
             150, 180,  # Isolated SFH
-            120, 120, 120,  # Townhouse row
+            120, 120, 120,  # Terraced house row
             400, 300,  # MFH cluster
             800, 800, 500  # Large AB cluster
         ],
@@ -101,7 +101,7 @@ def sample_mixed_neighborhood() -> gpd.GeoDataFrame:
             Polygon([(0, 0), (0, 10), (10, 10), (10, 0)]),
             Polygon([(20, 0), (20, 12), (32, 12), (32, 0)]),
 
-            # Townhouse row (3 connected)
+            # Terraced house row (3 connected)
             Polygon([(0, 30), (0, 45), (8, 45), (8, 30)]),
             Polygon([(8, 30), (8, 45), (16, 45), (16, 30)]),
             Polygon([(16, 30), (16, 45), (24, 45), (24, 30)]),
@@ -142,13 +142,13 @@ class TestBuildingClassification:
         # Total cluster area should equal individual building area
         assert all(result['total_cluster_area'] == result['floor_area'])
 
-    def test_classify_townhouse_cluster(
+    def test_classify_terraced_house_cluster(
         self,
         building_processor: BuildingHeuristicsProcessor,
-        sample_townhouse_cluster: gpd.GeoDataFrame
+        sample_terraced_house_cluster: gpd.GeoDataFrame
     ) -> None:
         """Test that linear arrangements of similar buildings are classified as TH."""
-        result = building_processor.classify_building_type(sample_townhouse_cluster)
+        result = building_processor.classify_building_type(sample_terraced_house_cluster)
 
         # All buildings should be classified as TH
         assert all(result['building_type'] == 'TH')
@@ -198,7 +198,7 @@ class TestBuildingClassification:
         # Should have 2 SFH (isolated buildings)
         assert type_counts.get('SFH', 0) == 2
 
-        # Should have 3 TH (townhouse row)
+        # Should have 3 TH (terraced house row)
         assert type_counts.get('TH', 0) == 3
 
         # Should have 2 MFH (medium cluster)
@@ -210,9 +210,9 @@ class TestBuildingClassification:
         # Verify specific buildings
         assert result.iloc[0]['building_type'] == 'SFH'  # First isolated
         assert result.iloc[1]['building_type'] == 'SFH'  # Second isolated
-        assert result.iloc[2]['building_type'] == 'TH'   # Townhouse 1
-        assert result.iloc[3]['building_type'] == 'TH'   # Townhouse 2
-        assert result.iloc[4]['building_type'] == 'TH'   # Townhouse 3
+        assert result.iloc[2]['building_type'] == 'TH'   # terraced house 1
+        assert result.iloc[3]['building_type'] == 'TH'   # terraced house 2
+        assert result.iloc[4]['building_type'] == 'TH'   # terraced house 3
         assert result.iloc[5]['building_type'] == 'MFH'  # MFH 1
         assert result.iloc[6]['building_type'] == 'MFH'  # MFH 2
         assert result.iloc[7]['building_type'] == 'AB'   # AB 1
@@ -573,13 +573,13 @@ class TestFreeWallsCalculation:
         # All buildings should have empty neighbors lists
         assert all(result['neighbors'].apply(len) == 0)
 
-    def test_calculate_free_walls_townhouse_row(
+    def test_calculate_free_walls_terraced_house_row(
         self,
         building_processor: BuildingHeuristicsProcessor,
-        sample_townhouse_cluster: gpd.GeoDataFrame
+        sample_terraced_house_cluster: gpd.GeoDataFrame
     ) -> None:
-        """Test free walls calculation for a row of townhouses."""
-        result = building_processor.calculate_free_walls(sample_townhouse_cluster)
+        """Test free walls calculation for a row of terraced_houses."""
+        result = building_processor.calculate_free_walls(sample_terraced_house_cluster)
 
         # Check free walls count
         free_walls = result['free_walls'].tolist()

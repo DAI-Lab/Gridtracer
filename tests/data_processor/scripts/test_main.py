@@ -120,7 +120,8 @@ class TestMainPipeline:
             # Setup orchestrator mock
             mock_orchestrator = Mock()
             mock_orchestrator.base_output_dir = Path('/test/output')
-            mock_orchestrator.get_dataset_specific_output_directory.return_value = Path('/test/output/buildings')
+            mock_orchestrator.get_dataset_specific_output_directory.return_value = Path(
+                '/test/output/buildings')
             mock_orchestrator_class.return_value = mock_orchestrator
 
             # Setup handler mocks
@@ -166,7 +167,8 @@ class TestMainPipeline:
             mock_ms_handler.process.assert_called_once()
 
             # Verify building processor was created and called
-            mock_orchestrator.get_dataset_specific_output_directory.assert_called_with("BUILDINGS_OUTPUT")
+            mock_orchestrator.get_dataset_specific_output_directory.assert_called_with(
+                "BUILDINGS_OUTPUT")
             mock_building_processor_class.assert_called_once_with(
                 mock_orchestrator.get_dataset_specific_output_directory.return_value)
             mock_building_processor.process.assert_called_once_with(
@@ -556,7 +558,8 @@ class TestPipelineIntegration:
             # Setup minimal mocks to allow pipeline to complete
             mock_orchestrator = Mock()
             mock_orchestrator.base_output_dir = Path('/test')
-            mock_orchestrator.get_dataset_specific_output_directory.return_value = Path('/test/buildings')
+            mock_orchestrator.get_dataset_specific_output_directory.return_value = Path(
+                '/test/buildings')
             mock_orchestrator_class.return_value = mock_orchestrator
 
             # Special setup for census handler (needs target_region_boundary)
@@ -582,7 +585,7 @@ class TestPipelineIntegration:
 
             # Mock building processor and road builder
             mock_building_processor_class.return_value = Mock()
-            
+
             # Mock road builder with a return value to prevent the subscript error
             mock_road_builder = Mock()
             mock_road_builder.process.return_value = {'geojson_file': '/test/roads.geojson'}
@@ -601,8 +604,10 @@ class TestPipelineIntegration:
             mock_osm_handler_class.assert_called_with(mock_orchestrator)
             mock_ms_handler_class.assert_called_with(mock_orchestrator)
 
-            # Building processor should be initialized with output directory from get_dataset_specific_output_directory
-            mock_orchestrator.get_dataset_specific_output_directory.assert_called_with("BUILDINGS_OUTPUT")
+            # Building processor should be initialized with output directory from
+            # get_dataset_specific_output_directory
+            mock_orchestrator.get_dataset_specific_output_directory.assert_called_with(
+                "BUILDINGS_OUTPUT")
             mock_building_processor_class.assert_called_with(
                 mock_orchestrator.get_dataset_specific_output_directory.return_value)
 

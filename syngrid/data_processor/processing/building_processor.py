@@ -92,9 +92,12 @@ class BuildingHeuristicsProcessor:
         residential = all_buildings[all_buildings['building_use'] == 'residential'].copy()
         other = all_buildings[all_buildings['building_use'] != 'residential'].copy()
 
+        other.to_file(self.dataset_output_dir
+                      / "07_Final_other_buildings_with_building_id.geojson")
+
         if len(residential) > 0:
             logger.info(
-                f"6. Processing {len(residential)} residential buildings to determine building type")
+                f"Step 6: Processing {len(residential)} residential buildings to determine building type")
 
             # Building type classification
             residential = self.classify_building_type(
@@ -110,12 +113,13 @@ class BuildingHeuristicsProcessor:
             )
 
             # Allot construction year
+            logger.info("Step 7: Alloting construction year")
             residential = self._allot_construction_year(
                 residential,
                 nrel_vintage_distribution
             )
             residential.to_file(self.dataset_output_dir
-                                / "07_residential_buildings_with_construction_year.geojson")
+                                / "07_FINAL_residential_buildings_with_construction_year.geojson")
 
             if len(residential) > 0:
                 # Write residential output
@@ -485,7 +489,7 @@ class BuildingHeuristicsProcessor:
                         if 'amenity_poi' in pois_for_this_building.columns:
                             if pois_for_this_building['amenity_poi'].isin(
                                     poi_public_amenities).any():
-                                classified_buildings.loc[building_idx, 'building_use'] = 'Public'
+                                classified_buildings.loc[building_idx, 'building_use'] = 'public'
                                 classified_this_building = True
 
                         # Rule 2: POI Amenity for Commercial (if not already Public)
@@ -617,7 +621,7 @@ class BuildingHeuristicsProcessor:
                                 elif lu_type_lower in ['commercial', 'retail']:
                                     current_use = 'commercial'
                                 elif lu_type_lower in ['industrial', 'railway', 'brownfield']:
-                                    current_use = 'Industrial'
+                                    current_use = 'industrial'
                                 elif lu_type_lower in ['religious', 'cemetery', 'military', 'public', 'civic', 'governmental', 'education', 'school', 'university', 'college', 'kindergarten', 'hospital', 'clinic']:
                                     current_use = 'public'
                                 # 'construction' is often temporary; might be better to leave for default or keyword if no other info
@@ -776,7 +780,7 @@ class BuildingHeuristicsProcessor:
         Classifies residential buildings into specific typologies based on
         neighborhood clustering and geometric relationships:
         - SFH (Single Family Home): Small isolated buildings
-        - TH (Townhouse/Row House): Buildings in linear arrangements
+        - TH (Terraced/Row House): Buildings in linear arrangements
         - MFH (Multi-Family Home): Medium-sized connected buildings
         - AB (Apartment Building): Large building clusters
 
@@ -2005,8 +2009,7 @@ class BuildingHeuristicsProcessor:
     def write_buildings_output(self, buildings: gpd.GeoDataFrame,
                                output_dir: Union[str, Path],
                                filename: str,
-                               building_type: str = 'residential',
-                               pylovo_mapping: bool = False) -> str:
+                               building_type: str = 'residential') -> str:
         """
         Writes processed building data to shapefile.
 
@@ -2020,9 +2023,6 @@ class BuildingHeuristicsProcessor:
             Output filename
         building_type : str
             Type of buildings ('residential' or 'non_residential')
-        pylovo_mapping : bool
-            If True, applies PyLOVO format (osm_id, Area, Use, etc.).
-            If False (default), preserves original column names (building_id, floor_area, etc.).
 
         Returns:
         --------
@@ -2035,25 +2035,15 @@ class BuildingHeuristicsProcessor:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = str(output_dir / filename)
 
-        # Prepare output data based on mapping requirements
-        if pylovo_mapping:
-            # Use schema classes for PyLOVO-specific formatting
-            if building_type == 'residential':
-                output_buildings = ResidentialBuildingOutput.prepare_pylovo_output(buildings)
-                logger.info("Applied PyLOVO mapping for residential buildings")
-            else:  # non_residential
-                output_buildings = NonResidentialBuildingOutput.prepare_pylovo_output(buildings)
-                logger.info("Applied PyLOVO mapping for non-residential buildings")
-        else:
-            # Use schema classes to filter and organize columns (default behavior)
-            if building_type == 'residential':
-                output_buildings = ResidentialBuildingOutput.prepare_default_output(buildings)
-                logger.info("Applied residential schema filtering with original column names")
-            else:  # non_residential
-                output_buildings = NonResidentialBuildingOutput.prepare_default_output(buildings)
-                logger.info("Applied non-residential schema filtering with original column names")
+        # Use schema classes to filter and organize columns
+        if building_type == 'residential':
+            output_buildings = ResidentialBuildingOutput.prepare_default_output(buildings)
+            logger.info("Applied residential schema filtering")
+        else:  # non_residential
+            output_buildings = NonResidentialBuildingOutput.prepare_default_output(buildings)
+            logger.info("Applied non-residential schema filtering")
 
-        # Write shapefile
+        # Write shapefile (field names will be automatically truncated by ESRI format)
         logger.info(f"Writing {len(output_buildings)} {building_type} buildings to {output_path}")
         logger.info(f"Output columns: {list(output_buildings.columns)}")
         output_buildings.to_file(output_path)

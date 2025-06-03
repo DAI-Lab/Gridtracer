@@ -212,7 +212,7 @@ class OSMDataHandler(DataHandler):
             keep_relations=True)
 
         # save RAW power features to file
-        raw_power_filepath = self.dataset_output_dir / "raw_power.geojson"
+        raw_power_filepath = self.dataset_output_dir / "raw" / "raw_power.geojson"
         raw_power_filepath.parent.mkdir(parents=True, exist_ok=True)
         power_features.to_file(raw_power_filepath, driver="GeoJSON")
 

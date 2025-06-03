@@ -44,90 +44,12 @@ class ResidentialBuildingOutput:
         return [field.name for field in dataclasses.fields(cls)]
 
     @classmethod
-    def get_pylovo_column_order(cls) -> List[str]:
-        """
-        Returns the target column order for PyLOVO output files.
-
-        Returns:
-        --------
-        List[str] : List of field names in expected PyLOVO output order
-        """
-        return ['osm_id', 'Area', 'Use', 'Comment', 'Free_walls', 'Building_T',
-                'Occupants', 'Floors', 'Constructi', 'Refurb_wal', 'Refurb_roo',
-                'Refurb_bas', 'Refurb_win', 'geometry']
-
-    @classmethod
-    def get_pylovo_column_mapping(cls) -> dict:
-        """
-        Returns the column mapping from original to PyLOVO target names.
-
-        Returns:
-        --------
-        dict : Mapping of original column names to PyLOVO target names
-        """
-        return {
-            'id': 'osm_id',
-            'floor_area': 'Area',
-            'building_use': 'Use',
-            'free_walls': 'Free_walls',
-            'building_type': 'Building_T',
-            'occupants': 'Occupants',
-            'floors': 'Floors',
-            'construction_year': 'Constructi',
-            'comment': 'Comment',
-            'refurb_walls': 'Refurb_wal',
-            'refurb_roof': 'Refurb_roo',
-            'refurb_basement': 'Refurb_bas',
-            'refurb_windows': 'Refurb_win',
-            'geometry': 'geometry'
-        }
-
-    @classmethod
-    def prepare_pylovo_output(cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """
-        Prepares residential buildings data for PyLOVO output format.
-
-        This method handles column mapping from original names to PyLOVO names,
-        adds missing optional columns, and orders columns according to PyLOVO specifications.
-
-        Parameters:
-        -----------
-        buildings : GeoDataFrame
-            Source buildings data with original column names
-
-        Returns:
-        --------
-        GeoDataFrame : Buildings data formatted for PyLOVO with proper column names and order
-        """
-        # Create a copy to avoid modifying original
-        output_buildings = buildings.copy()
-
-        # Apply column mapping from original to PyLOVO names
-        column_mapping = cls.get_pylovo_column_mapping()
-        for original_col, pylovo_col in column_mapping.items():
-            if original_col in output_buildings.columns:
-                if original_col != pylovo_col:  # Only rename if different
-                    output_buildings = output_buildings.rename(columns={original_col: pylovo_col})
-
-        # Add missing optional PyLOVO columns with None values
-        pylovo_order = cls.get_pylovo_column_order()
-        for field in pylovo_order:
-            if field not in output_buildings.columns and field != 'geometry':
-                output_buildings[field] = None
-
-        # Reorder columns according to PyLOVO column order
-        available_columns = [col for col in pylovo_order if col in output_buildings.columns]
-        output_buildings = output_buildings[available_columns]
-
-        return output_buildings
-
-    @classmethod
     def prepare_default_output(cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Prepares residential buildings data for default output format.
 
         This method filters columns according to the schema and adds missing optional columns,
-        but preserves original column names (no PyLOVO mapping applied).
+        but preserves original column names.
 
         Parameters:
         -----------
@@ -193,72 +115,12 @@ class NonResidentialBuildingOutput:
         return [field.name for field in dataclasses.fields(cls)]
 
     @classmethod
-    def get_pylovo_column_mapping(cls) -> dict:
-        """
-        Returns the column mapping from original to PyLOVO target names.
-
-        Returns:
-        --------
-        dict : Mapping of original column names to PyLOVO target names
-        """
-        return {
-            'id': 'osm_id',
-            'floor_area': 'Area',
-            'building_use': 'Use',
-            'free_walls': 'Free_walls',
-            'comment': 'Comment',
-            'geometry': 'geometry'
-        }
-
-    @classmethod
-    def prepare_pylovo_output(cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """
-        Prepares non-residential buildings data for PyLOVO output format.
-
-        This method handles column mapping from original names to PyLOVO names,
-        adds missing optional columns, and orders columns according to PyLOVO specifications.
-
-        Parameters:
-        -----------
-        buildings : GeoDataFrame
-            Source buildings data with original column names
-
-        Returns:
-        --------
-        GeoDataFrame : Buildings data formatted for PyLOVO with proper column names and order
-        """
-        # Create a copy to avoid modifying original
-        output_buildings = buildings.copy()
-
-        # Apply column mapping from original to PyLOVO names
-        column_mapping = cls.get_pylovo_column_mapping()
-        for original_col, pylovo_col in column_mapping.items():
-            if original_col in output_buildings.columns:
-                if original_col != pylovo_col:  # Only rename if different
-                    output_buildings = output_buildings.rename(columns={original_col: pylovo_col})
-
-        # Add missing optional PyLOVO columns with None values
-        pylovo_mapped_fields = list(column_mapping.values())
-        for field in pylovo_mapped_fields:
-            if field not in output_buildings.columns and field != 'geometry':
-                output_buildings[field] = None
-
-        # Reorder columns according to PyLOVO mapped field order
-        available_columns = [
-            col for col in pylovo_mapped_fields
-            if col in output_buildings.columns
-        ]
-        output_buildings = output_buildings[available_columns]
-
-        return output_buildings
-
-    @classmethod
     def prepare_default_output(cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Prepares non-residential buildings data for default output format.
 
         This method filters columns according to the schema and adds missing optional columns,
-        but preserves original column names (no PyLOVO mapping applied).
+        but preserves original column names.
 
         Parameters:
         -----------
