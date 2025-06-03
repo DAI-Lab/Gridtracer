@@ -1,4 +1,5 @@
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import pytest
 from shapely.geometry import Polygon
@@ -1030,3 +1031,261 @@ class TestEvaluationFunction:
         # Should return empty DataFrame due to missing census_block_id column
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 0
+
+
+class TestConstructionYearAllocation:
+    """Test suite for construction year allocation functionality."""
+
+    @pytest.fixture
+    def sample_buildings_for_vintage(self) -> gpd.GeoDataFrame:
+        """Create sample buildings for construction year testing."""
+        buildings_data = {
+            'building_id': [f'test_{i:03d}' for i in range(1, 101)],  # 100 buildings
+            'building_type': ['SFH'] * 50 + ['TH'] * 30 + ['MFH'] * 20,
+            'floor_area': [150] * 100,
+            'geometry': [
+                Polygon([(i * 10, 0), (i * 10, 10), ((i + 1) * 10, 10), ((i + 1) * 10, 0)])
+                for i in range(100)
+            ]
+        }
+        return gpd.GeoDataFrame(buildings_data, crs="EPSG:5070")
+
+    @pytest.fixture
+    def sample_vintage_distribution(self) -> dict:
+        """Create sample NREL vintage distribution."""
+        return {
+            '<1940': 0.35,      # 35%
+            '1940s': 0.25,      # 25%
+            '1950s': 0.20,      # 20%
+            '1960s': 0.15,      # 15%
+            '1970s': 0.05       # 5%
+        }
+
+    def test_allot_construction_year_normal_distribution(
+        self,
+        building_processor: BuildingHeuristicsProcessor,
+        sample_buildings_for_vintage: gpd.GeoDataFrame,
+        sample_vintage_distribution: dict
+    ) -> None:
+        """Test normal construction year allocation with valid distribution."""
+        result = building_processor._allot_construction_year(
+            sample_buildings_for_vintage,
+            sample_vintage_distribution
+        )
+
+        # Check that all buildings have construction year assigned
+        assert 'construction_year' in result.columns
+        assert len(result) == 100
+        assert result['construction_year'].notna().all()
+
+        # Check that only valid vintage bins are assigned
+        assigned_vintages = set(result['construction_year'].unique())
+        expected_vintages = set(sample_vintage_distribution.keys())
+        assert assigned_vintages.issubset(expected_vintages)
+
+        # Check distribution is roughly correct (within reasonable tolerance)
+        vintage_counts = result['construction_year'].value_counts()
+        for vintage, expected_prob in sample_vintage_distribution.items():
+            if vintage in vintage_counts:
+                actual_prob = vintage_counts[vintage] / len(result)
+                # Allow 15% tolerance for random variation in small sample
+                assert abs(actual_prob - expected_prob) < 0.15, \
+                    f"Vintage {vintage}: expected {expected_prob:.2f}, got {actual_prob:.2f}"
+
+    def test_allot_construction_year_empty_buildings(
+        self,
+        building_processor: BuildingHeuristicsProcessor,
+        sample_vintage_distribution: dict
+    ) -> None:
+        """Test construction year allocation with empty buildings input."""
+        empty_buildings = gpd.GeoDataFrame({'geometry': []}, crs="EPSG:5070")
+
+        result = building_processor._allot_construction_year(
+            empty_buildings,
+            sample_vintage_distribution
+        )
+
+        assert len(result) == 0
+        assert 'construction_year' in result.columns
+
+    def test_allot_construction_year_empty_distribution(
+        self,
+        building_processor: BuildingHeuristicsProcessor,
+        sample_buildings_for_vintage: gpd.GeoDataFrame
+    ) -> None:
+        """Test construction year allocation with empty distribution."""
+        empty_distribution = {}
+
+        result = building_processor._allot_construction_year(
+            sample_buildings_for_vintage,
+            empty_distribution
+        )
+
+        # Should assign 'Unknown' to all buildings
+        assert len(result) == 100
+        assert 'construction_year' in result.columns
+        assert (result['construction_year'] == 'Unknown').all()
+
+    def test_allot_construction_year_invalid_distribution(
+        self,
+        building_processor: BuildingHeuristicsProcessor,
+        sample_buildings_for_vintage: gpd.GeoDataFrame
+    ) -> None:
+        """Test construction year allocation with invalid distribution (all zeros)."""
+        invalid_distribution = {
+            '<1940': 0.0,
+            '1940s': 0.0,
+            '1950s': 0.0
+        }
+
+        result = building_processor._allot_construction_year(
+            sample_buildings_for_vintage,
+            invalid_distribution
+        )
+
+        # Should assign 'Unknown' to all buildings
+        assert len(result) == 100
+        assert 'construction_year' in result.columns
+        assert (result['construction_year'] == 'Unknown').all()
+
+    def test_allot_construction_year_unnormalized_distribution(
+        self,
+        building_processor: BuildingHeuristicsProcessor,
+        sample_buildings_for_vintage: gpd.GeoDataFrame
+    ) -> None:
+        """Test construction year allocation with unnormalized distribution."""
+        # Distribution that doesn't sum to 1.0
+        unnormalized_distribution = {
+            '<1940': 0.7,       # 70%
+            '1940s': 0.5,       # 50%
+            '1950s': 0.3        # 30%
+            # Total = 150% (should be normalized to 100%)
+        }
+
+        result = building_processor._allot_construction_year(
+            sample_buildings_for_vintage,
+            unnormalized_distribution
+        )
+
+        # Check that all buildings have construction year assigned
+        assert 'construction_year' in result.columns
+        assert len(result) == 100
+        assert result['construction_year'].notna().all()
+
+        # Check that only valid vintage bins are assigned
+        assigned_vintages = set(result['construction_year'].unique())
+        expected_vintages = set(unnormalized_distribution.keys())
+        assert assigned_vintages.issubset(expected_vintages)
+
+        # Check that normalization worked - should get roughly the normalized proportions
+        vintage_counts = result['construction_year'].value_counts()
+        total_original = sum(unnormalized_distribution.values())
+
+        for vintage, original_prob in unnormalized_distribution.items():
+            if vintage in vintage_counts:
+                expected_normalized_prob = original_prob / total_original
+                actual_prob = vintage_counts[vintage] / len(result)
+                # Allow 15% tolerance for random variation
+                assert abs(actual_prob - expected_normalized_prob) < 0.15, \
+                    f"Vintage {vintage}: expected {expected_normalized_prob:.2f}, " \
+                    f"got {actual_prob:.2f}"
+
+    def test_allot_construction_year_single_vintage(
+        self,
+        building_processor: BuildingHeuristicsProcessor,
+        sample_buildings_for_vintage: gpd.GeoDataFrame
+    ) -> None:
+        """Test construction year allocation with single vintage bin."""
+        single_vintage_distribution = {
+            '1950s': 1.0  # 100%
+        }
+
+        result = building_processor._allot_construction_year(
+            sample_buildings_for_vintage,
+            single_vintage_distribution
+        )
+
+        # All buildings should be assigned the single vintage
+        assert len(result) == 100
+        assert 'construction_year' in result.columns
+        assert (result['construction_year'] == '1950s').all()
+
+    def test_allot_construction_year_reproducibility(
+        self,
+        building_processor: BuildingHeuristicsProcessor,
+        sample_buildings_for_vintage: gpd.GeoDataFrame,
+        sample_vintage_distribution: dict
+    ) -> None:
+        """Test that construction year allocation is reproducible with same seed."""
+        # First run with seed
+        np.random.seed(42)
+        result1 = building_processor._allot_construction_year(
+            sample_buildings_for_vintage,
+            sample_vintage_distribution
+        )
+
+        # Second run with same seed
+        np.random.seed(42)
+        result2 = building_processor._allot_construction_year(
+            sample_buildings_for_vintage,
+            sample_vintage_distribution
+        )
+
+        # Results should be identical due to same seed
+        assert result1['construction_year'].equals(result2['construction_year'])
+
+    def test_allot_construction_year_preserves_other_columns(
+        self,
+        building_processor: BuildingHeuristicsProcessor,
+        sample_buildings_for_vintage: gpd.GeoDataFrame,
+        sample_vintage_distribution: dict
+    ) -> None:
+        """Test that construction year allocation preserves existing columns."""
+        original_columns = set(sample_buildings_for_vintage.columns)
+
+        result = building_processor._allot_construction_year(
+            sample_buildings_for_vintage,
+            sample_vintage_distribution
+        )
+
+        # Should have all original columns plus construction_year
+        expected_columns = original_columns | {'construction_year'}
+        assert set(result.columns) == expected_columns
+
+        # Original data should be preserved
+        for col in original_columns:
+            if col != 'geometry':  # Skip geometry comparison (more complex)
+                assert result[col].equals(sample_buildings_for_vintage[col])
+
+    def test_allot_construction_year_small_sample(
+        self,
+        building_processor: BuildingHeuristicsProcessor,
+        sample_vintage_distribution: dict
+    ) -> None:
+        """Test construction year allocation with very small building sample."""
+        # Create just 3 buildings
+        small_buildings = gpd.GeoDataFrame({
+            'building_id': ['small_1', 'small_2', 'small_3'],
+            'building_type': ['SFH', 'TH', 'MFH'],
+            'floor_area': [150, 120, 300],
+            'geometry': [
+                Polygon([(0, 0), (0, 10), (10, 10), (10, 0)]),
+                Polygon([(20, 0), (20, 10), (30, 10), (30, 0)]),
+                Polygon([(40, 0), (40, 10), (50, 10), (50, 0)])
+            ]
+        }, crs="EPSG:5070")
+
+        result = building_processor._allot_construction_year(
+            small_buildings,
+            sample_vintage_distribution
+        )
+
+        # Should work even with small sample
+        assert len(result) == 3
+        assert 'construction_year' in result.columns
+        assert result['construction_year'].notna().all()
+
+        # All assigned vintages should be valid
+        assigned_vintages = set(result['construction_year'].unique())
+        expected_vintages = set(sample_vintage_distribution.keys())
+        assert assigned_vintages.issubset(expected_vintages)

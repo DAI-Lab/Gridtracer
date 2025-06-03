@@ -5,6 +5,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from syngrid.data_processor.processing.building_schema import (
+    NonResidentialBuildingOutput, ResidentialBuildingOutput,)
 from syngrid.data_processor.utils import logger
 
 
@@ -30,9 +32,9 @@ class BuildingHeuristicsProcessor:
         self.output_dir = Path(output_dir)
 
     def process(self, census_data: Dict, osm_data: Dict,
-                microsoft_buildings_data: Dict) -> Dict[str, str]:
+                microsoft_buildings_data: Dict, nrel_vintage_distribution: Dict) -> Dict[str, str]:
         """
-        Main method that orch§estrates the entire building classification process.
+        Main method that orchestrates the entire building classification process.
 
         Parameters:
         -----------
@@ -86,7 +88,7 @@ class BuildingHeuristicsProcessor:
 
         # Split buildings by use after ID assignment
         residential = all_buildings[all_buildings['building_use'] == 'residential'].copy()
-        # other = all_buildings[all_buildings['building_use'] != 'residential'].copy()
+        other = all_buildings[all_buildings['building_use'] != 'residential'].copy()
 
         if len(residential) > 0:
             logger.info(
@@ -105,80 +107,40 @@ class BuildingHeuristicsProcessor:
                 census_data.get('target_region_blocks')
             )
 
-        #     # Allot construction year
-        #     residential = self.allot_construction_year(
-        #         residential,
-        #         census_data.get('housing_age')
-        #     )
+            # Allot construction year
+            residential = self._allot_construction_year(
+                residential,
+                nrel_vintage_distribution
+            )
+            residential.to_file(self.output_dir
+                                / "07_residential_buildings_with_construction_year.geojson")
 
-        #     # Optional: Allot refurbishment level
-        #     residential = self.allot_refurbishment_level(residential)
+            if len(residential) > 0:
+                # Write residential output
+                residential_output_path = self.write_buildings_output(
+                    residential,
+                    self.output_dir,
+                    'residential_buildings.shp',
+                    'residential'
+                )
+                logger.info(f"Residential buildings saved to: {residential_output_path}")
+            else:
+                logger.warning("No residential buildings found")
 
-        #     # Write residential output
-        #     residential_output_path = self.write_buildings_output(
-        #         residential,
-        #         self.output_dir,
-        #         'buildings_residential.shp'
-        #     )
-        #     logger.info(f"Residential buildings saved to: {residential_output_path}")
-        # else:
-        #     # Create empty stub file for residential
-        #     logger.warning("No residential buildings found")
-        #     residential_output_path = self.write_empty_data_stub(
-        #         self.output_dir,
-        #         'buildings_residential.txt',
-        #         "No residential buildings found"
-        #     )
+        if len(other) > 0:
+            logger.info(f"Processing {len(other)} non-residential buildings")
 
-        # # Step 5: Process non-residential buildings
-        # other_output_path = None
-        # if len(other) > 0:
-        #     logger.info(f"Processing {len(other)} non-residential buildings")
-        #     # Write non-residential output
-        #     other_output_path = self.write_buildings_output(
-        #         other,
-        #         self.output_dir,
-        #         'buildings_other.shp'
-        #     )
-        #     logger.info(f"Non-residential buildings saved to: {other_output_path}")
-        # else:
-        #     # Create empty stub file for non-residential
-        #     logger.warning("No non-residential buildings found")
-        #     other_output_path = self.write_empty_data_stub(
-        #         self.output_dir,
-        #         'buildings_other.txt',
-        #         "No non-residential buildings found"
-        #     )
-
-        # # Step 6: Generate final classified buildings shapefile by merging
-        # classified_output_path = None
-        # if residential_output_path and residential_output_path.endswith('.shp') and \
-        #    other_output_path and other_output_path.endswith('.shp'):
-        #     logger.info("Merging residential and non-residential buildings")
-        #     classified_output_path = self.merge_building_layers(
-        #         residential_output_path,
-        #         other_output_path,
-        #         self.output_dir,
-        #         'buildings_classified.shp'
-        #     )
-        # elif residential_output_path and residential_output_path.endswith('.shp'):
-        #     classified_output_path = residential_output_path
-        # elif other_output_path and other_output_path.endswith('.shp'):
-        #     classified_output_path = other_output_path
-        # else:
-        #     classified_output_path = self.write_empty_data_stub(
-        #         self.output_dir,
-        #         'buildings_classified.txt',
-        #         "No buildings found"
-        #     )
-
-        # logger.info(f"Building classification complete. Final output: {classified_output_path}")
-        # return {
-        #     'residential': residential_output_path,
-        #     'other': other_output_path,
-        #     'classified': classified_output_path
-        # }
-        return all_buildings
+            if len(other) > 0:
+                # Write non-residential output
+                other_output_path = self.write_buildings_output(
+                    other,
+                    self.output_dir,
+                    'non_residential_buildings.shp',
+                    'non_residential'
+                )
+                logger.info(f"Non-residential buildings saved to: {other_output_path}")
+            else:
+                logger.warning("No non-residential buildings found")
 
     def _filter_small_buildings(self, buildings: gpd.GeoDataFrame,
                                 min_area: int = 45) -> gpd.GeoDataFrame:
@@ -242,11 +204,10 @@ class BuildingHeuristicsProcessor:
         logger.info(
             f"Starting building use classification for {len(classified_buildings)} buildings.")
 
-        # Initialize 'building_use' column
-        classified_buildings['building_use'] = pd.NA
-
         # --- Step 0: Exclusions ---
         # Filter out common non-building structures or utility infrastructure
+        total_excluded = 0
+
         if 'building' in classified_buildings.columns:
             exclude_building_values = [
                 'garage',
@@ -257,9 +218,11 @@ class BuildingHeuristicsProcessor:
                 'gazebo',
                 'service']
             mask = classified_buildings['building'].isin(exclude_building_values)
-            classified_buildings.loc[mask, 'building_use'] = 'Excluded - Non Habitable Structure'
+            excluded_count = mask.sum()
+            total_excluded += excluded_count
+            classified_buildings = classified_buildings[~mask]
             logger.info(
-                f"{mask.sum()} buildings marked as 'Excluded - Non Habitable Structure' based on 'building' tag.")
+                f"Removed {excluded_count} non-habitable structures based on 'building' tag.")
 
         if 'power' in classified_buildings.columns:
             exclude_power_values = [
@@ -269,17 +232,25 @@ class BuildingHeuristicsProcessor:
                 'tower',
                 'portal',
                 'catenary_mast']
-            mask = classified_buildings['power'].isin(
-                exclude_power_values) & classified_buildings['building_use'].isna()
-            classified_buildings.loc[mask, 'building_use'] = 'Excluded - Power Infrastructure'
-            logger.info(f"{mask.sum()} buildings marked as 'Excluded - Power Infrastructure'.")
+            mask = classified_buildings['power'].isin(exclude_power_values)
+            excluded_count = mask.sum()
+            total_excluded += excluded_count
+            classified_buildings = classified_buildings[~mask]
+            logger.info(f"Removed {excluded_count} power infrastructure buildings.")
 
-        # Consider only buildings not yet excluded for further classification
-        candidate_buildings = classified_buildings[classified_buildings['building_use'].isna()].copy(
-        )
-        if candidate_buildings.empty:
-            logger.info("No candidate buildings remaining after initial exclusions.")
+        logger.info(f"Total excluded buildings removed: {total_excluded}")
+        logger.info(f"Remaining buildings for classification: {len(classified_buildings)}")
+
+        # Initialize 'building_use' column for remaining buildings
+        classified_buildings['building_use'] = pd.NA
+
+        # Check if any buildings remain for classification
+        if classified_buildings.empty:
+            logger.info("No buildings remaining after exclusions.")
             return classified_buildings
+
+        # All remaining buildings are candidates for classification
+        candidate_buildings = classified_buildings.copy()
 
         # --- Step 1: Direct OSM Tags on Buildings ---
         # Order within this step reflects assumed specificity/reliability of tags.
@@ -659,7 +630,7 @@ class BuildingHeuristicsProcessor:
         mask = classified_buildings['building_use'].isna()
         classified_buildings.loc[mask, 'building_use'] = 'residential'  # Default
         logger.info(
-            f"{mask.sum()} buildings assigned default use 'Residential'."
+            f"{mask.sum()} buildings assigned default use 'residential'."
         )
 
         # ---Step 4: Remove irrelevant properties
@@ -893,7 +864,6 @@ class BuildingHeuristicsProcessor:
         -----------
         buildings : GeoDataFrame
             Building polygons with consistent indexing
-
         Returns:
         --------
         dict : Mapping of building index to list of neighbor indices
@@ -1057,71 +1027,339 @@ class BuildingHeuristicsProcessor:
     def _allot_occupants(self, buildings: gpd.GeoDataFrame,
                          census_blocks: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
-        Allocates household occupants to residential buildings based on
-        building type, size, and census population data.
+        Allocates household occupants and housing units to residential buildings
+        based on building type, size, and census population data.
 
         Parameters:
         -----------
         buildings : GeoDataFrame
-            Residential buildings with building_type
+            Residential buildings with columns: ['building_type', 'census_block_id', 'floor_area']
         census_blocks : GeoDataFrame
-            Census blocks with population data
+            Census blocks with columns: ['GEOID20', 'POP20', 'HOUSING20']
 
         Returns:
         --------
-        GeoDataFrame : Buildings with 'occupants' column added
+        GeoDataFrame : Same as input, with 'occupants' and 'housing_units' columns filled.
         """
-        if buildings is None or len(buildings) == 0:
+
+        if buildings is None or buildings.empty:
             return buildings
 
-        # Create a copy to avoid modifying the original
+        if census_blocks is None or census_blocks.empty:
+            logger.warning("No census blocks provided for occupant allocation.")
+            buildings_copy = buildings.copy()
+            buildings_copy['occupants'] = 0
+            buildings_copy['housing_units'] = 0.0
+            return buildings_copy
+
+        # Copy to avoid modifying original
         buildings_with_occupants = buildings.copy()
 
-        # Initialize occupants column
+        # Initialize output columns
         buildings_with_occupants['occupants'] = 0
+        buildings_with_occupants['housing_units'] = 0.0
 
-        # 1. Calculate maximum occupant capacity per building type
-        logger.debug("Calculating maximum occupant capacity")
+        logger.info("Starting census-based occupant allocation")
 
-        # Default capacity calculation based on building type and area
-        for idx, building in buildings_with_occupants.iterrows():
-            area = building['floor_area']
-            if building['building_type'] == 'SFH':
-                # SFH: Typically 2-6 people based on area
-                buildings_with_occupants.at[idx, 'occupants'] = min(6, max(2, int(area / 50)))
-            elif building['building_type'] == 'TH':
-                # TH: Typically 2-4 people per unit
-                buildings_with_occupants.at[idx, 'occupants'] = min(4, max(2, int(area / 50)))
-            elif building['building_type'] == 'MFH':
-                # MFH: Based on number of units estimated from floor area
-                units = max(2, int(area / 100))
-                avg_occupants_per_unit = 2.5
-                buildings_with_occupants.at[idx, 'occupants'] = int(units * avg_occupants_per_unit)
-            elif building['building_type'] == 'AB':
-                # AB: Based on number of units estimated from floor area
-                units = max(4, int(area / 80))
-                avg_occupants_per_unit = 2.0
-                buildings_with_occupants.at[idx, 'occupants'] = int(units * avg_occupants_per_unit)
+        for _, census_block in census_blocks.iterrows():
+            geoid = census_block['GEOID20']
+            total_pop = census_block.get('POP20', 0)
+            total_units = census_block.get('HOUSING20', 0)
 
-        # 2. Distribute census block population to buildings
-        logger.debug("Distributing census block population")
-        # This would spatially join buildings to census blocks
-        # and proportionally distribute population based on capacity
+            # Get buildings in this census block
+            mask = buildings_with_occupants['census_block_id'] == geoid
+            block_buildings = buildings_with_occupants[mask]
 
-        # 3. Handle buildings with no census block data
-        # Already handled by default calculation above
+            if block_buildings.empty:
+                logger.debug(f"No buildings found for census block {geoid}, skipping.")
+                continue
 
-        # 4. Ensure total population matches census totals
-        logger.debug("Validating population distribution")
-        # This would adjust occupant counts to match census totals
+            # Handle special case where population is missing/invalid
+            if total_pop <= 0:
+                logger.debug(f"No population data for census block {geoid}, skipping.")
+                continue
 
-        # Calculate households
-        buildings_with_occupants['households'] = buildings_with_occupants.apply(
-            lambda x: 1 if x['building_type'] in ['SFH', 'TH'] else
-            max(1, int(x['occupants'] / 2.5)), axis=1
-        )
+            # Calculate initial capacity for each building
+            def calculate_initial_capacity(row):
+                t = row['building_type']
+                a = row['floor_area']
+                if t == 'SFH':
+                    return 2 * max(6, (2 * a / 50))
+                elif t == 'TH':
+                    return 2 * max(3, (2 * a / 50))
+                elif t == 'MFH':
+                    return 2 * max(36, (3 * a / 50))
+                elif t == 'AB':
+                    return 2 * max(1000, (10 * a / 50))
+                else:
+                    return max(1, a / 100)  # fallback
 
+            block_buildings = block_buildings.copy()
+            block_buildings['initial_capacity'] = block_buildings.apply(
+                calculate_initial_capacity, axis=1)
+            block_buildings['max_capacity'] = block_buildings['initial_capacity'].copy()
+            block_buildings['occupants'] = 0
+            block_buildings['housing_units'] = 0
+
+            # Count building types
+            type_counts = block_buildings['building_type'].value_counts()
+            ab_count = type_counts.get('AB', 0)
+            mfh_count = type_counts.get('MFH', 0)
+            th_count = type_counts.get('TH', 0)
+            sfh_count = type_counts.get('SFH', 0)
+
+            # Sort buildings by area (largest first) within each type for priority allocation
+            building_priority_order = []
+            for building_type in ['AB', 'MFH', 'TH', 'SFH']:
+                type_buildings = block_buildings[block_buildings['building_type'] == building_type]
+                type_buildings_sorted = type_buildings.sort_values('floor_area', ascending=False)
+                building_priority_order.extend(type_buildings_sorted.index.tolist())
+
+            # Calculate total initial capacity
+            total_initial_capacity = block_buildings['max_capacity'].sum()
+            remaining_population = int(total_pop)
+
+            logger.debug(f"Block {geoid}: {remaining_population} people, "
+                         f"{total_initial_capacity:.0f} initial capacity, "
+                         f"AB:{ab_count}, MFH:{mfh_count}, TH:{th_count}, SFH:{sfh_count}")
+
+            # Phase 1: Capacity Adjustment (if needed)
+            if remaining_population > total_initial_capacity and ab_count == 0:
+                logger.debug(
+                    f"Block {geoid}: Population exceeds capacity, adjusting building capacities")
+
+                # Increase MFH capacity first
+                if mfh_count > 0:
+                    while total_initial_capacity < remaining_population:
+                        for idx in block_buildings[block_buildings['building_type']
+                                                   == 'MFH'].index:
+                            block_buildings.at[idx, 'max_capacity'] += 1
+                        total_initial_capacity = block_buildings['max_capacity'].sum()
+                        if total_initial_capacity >= remaining_population:
+                            break
+
+                # Then increase SFH capacity if still needed
+                if sfh_count > 0 and total_initial_capacity < remaining_population:
+                    while total_initial_capacity < remaining_population:
+                        for idx in block_buildings[block_buildings['building_type']
+                                                   == 'SFH'].index:
+                            block_buildings.at[idx, 'max_capacity'] += 1
+                        total_initial_capacity = block_buildings['max_capacity'].sum()
+                        if total_initial_capacity >= remaining_population:
+                            break
+
+                # Finally increase TH capacity if still needed
+                if th_count > 0 and total_initial_capacity < remaining_population:
+                    while total_initial_capacity < remaining_population:
+                        for idx in block_buildings[block_buildings['building_type'] == 'TH'].index:
+                            block_buildings.at[idx, 'max_capacity'] += 1
+                        total_initial_capacity = block_buildings['max_capacity'].sum()
+                        if total_initial_capacity >= remaining_population:
+                            break
+
+            # Phase 2: Incremental Population Allocation
+            logger.debug(
+                f"Block {geoid}: Starting incremental allocation of {remaining_population} people")
+
+            # Allocate population incrementally, one person at a time
+            iteration_count = 0
+            max_iterations = remaining_population * 2  # Safety limit
+
+            while remaining_population > 0 and iteration_count < max_iterations:
+                allocated_this_round = False
+
+                # Go through buildings in priority order
+                for building_idx in building_priority_order:
+                    if remaining_population <= 0:
+                        break
+
+                    current_occupants = block_buildings.at[building_idx, 'occupants']
+                    max_capacity = block_buildings.at[building_idx, 'max_capacity']
+
+                    if current_occupants < max_capacity:
+                        block_buildings.at[building_idx, 'occupants'] += 1
+                        remaining_population -= 1
+                        allocated_this_round = True
+
+                if not allocated_this_round:
+                    logger.warning(
+                        f"Block {geoid}: Could not allocate remaining {remaining_population} people")
+                    break
+
+                iteration_count += 1
+
+            # Phase 3: Calculate Housing Units
+            # Use proportional allocation for housing units based on occupants
+            total_allocated_population = block_buildings['occupants'].sum()
+            if total_allocated_population > 0 and total_units > 0:
+                for idx in block_buildings.index:
+                    occupant_ratio = block_buildings.at[idx,
+                                                        'occupants'] / total_allocated_population
+                    block_buildings.at[idx, 'housing_units'] = int(
+                        round(occupant_ratio * total_units))
+            else:
+                # Fallback: estimate housing units from occupants
+                block_buildings['housing_units'] = (
+                    block_buildings['occupants'] / 2.6).round().astype(int)
+
+            # Update the master dataframe
+            buildings_with_occupants.loc[mask, 'occupants'] = block_buildings['occupants']
+            buildings_with_occupants.loc[mask,
+                                         'housing_units'] = block_buildings['housing_units'].astype(int)
+
+            # Log allocation results
+            final_allocated = block_buildings['occupants'].sum()
+            logger.debug(f"Block {geoid}: Allocated {final_allocated}/{total_pop} people "
+                         f"({final_allocated/total_pop*100:.1f}%)")
+
+        # Phase 4: Statistical Analysis and Remaining Population Allocation
+        logger.info("Performing statistical analysis and final allocation adjustments")
+
+        # Calculate statistics by building type for buildings with occupants
+        building_stats = {}
+        for building_type in ['SFH', 'TH', 'MFH', 'AB']:
+            type_buildings = buildings_with_occupants[
+                (buildings_with_occupants['building_type'] == building_type)
+                & (buildings_with_occupants['occupants'] > 0)
+            ]
+            if len(type_buildings) > 0:
+                mean_occupants = type_buildings['occupants'].mean()
+                std_occupants = type_buildings['occupants'].std()
+                if pd.isna(std_occupants):
+                    std_occupants = 0
+                max_occupants = mean_occupants + 2 * std_occupants
+                building_stats[building_type] = {
+                    'mean': mean_occupants,
+                    'std': std_occupants,
+                    'max_statistical': max(max_occupants, mean_occupants)
+                }
+            else:
+                # Default values if no buildings of this type have occupants
+                building_stats[building_type] = {
+                    'mean': 2.0,
+                    'std': 1.0,
+                    'max_statistical': 4.0
+                }
+
+        # Allocate remaining population to buildings with 0 occupants
+        zero_occupant_buildings = buildings_with_occupants[buildings_with_occupants['occupants'] == 0]
+        if len(zero_occupant_buildings) > 0:
+            logger.info(
+                f"Allocating population to {len(zero_occupant_buildings)} buildings with 0 occupants")
+
+            for idx in zero_occupant_buildings.index:
+                building_type = buildings_with_occupants.at[idx, 'building_type']
+                if building_type in building_stats:
+                    estimated_occupants = max(
+                        1, int(building_stats[building_type]['max_statistical'] / 4))
+                    buildings_with_occupants.at[idx, 'occupants'] = estimated_occupants
+                    # Estimate housing units and cast to int
+                    buildings_with_occupants.at[idx, 'housing_units'] = max(
+                        1, int(round(estimated_occupants / 2.6)))
+
+        # Final capacity check - ensure no building exceeds statistical maximum
+        for idx in buildings_with_occupants.index:
+            building_type = buildings_with_occupants.at[idx, 'building_type']
+            if building_type in building_stats:
+                max_allowed = int(building_stats[building_type]['max_statistical'])
+                current_occupants = buildings_with_occupants.at[idx, 'occupants']
+                if current_occupants > max_allowed:
+                    buildings_with_occupants.at[idx, 'occupants'] = max_allowed
+                    buildings_with_occupants.at[idx, 'housing_units'] = max(
+                        1, int(round(max_allowed / 2.6)))
+
+        logger.info("Completed census-based occupant allocation.")
         return buildings_with_occupants
+
+    def evaluate_census_block_allocation(self, buildings: gpd.GeoDataFrame,
+                                         geoid20: str) -> pd.DataFrame:
+        """
+        Evaluate and summarize building allocation results for a specific census block.
+
+        This function provides detailed analysis of how population and housing units
+        were allocated to buildings within a given census block, useful for
+        validation and debugging.
+
+        Parameters:
+        -----------
+        buildings : GeoDataFrame
+            Buildings with allocation results (must include census_block_id column)
+        geoid20 : str
+            Census block GEOID20 to analyze
+
+        Returns:
+        --------
+        DataFrame : Summary of buildings in the census block with key metrics
+        """
+        if buildings is None or buildings.empty:
+            logger.warning("No buildings provided for evaluation")
+            return pd.DataFrame()
+
+        if 'census_block_id' not in buildings.columns:
+            logger.error("Buildings must have 'census_block_id' column for evaluation")
+            return pd.DataFrame()
+
+        # Filter buildings for the specified census block
+        block_buildings = buildings[buildings['census_block_id'] == geoid20].copy()
+
+        if block_buildings.empty:
+            logger.warning(f"No buildings found for census block {geoid20}")
+            return pd.DataFrame()
+
+        # Select relevant columns for evaluation
+        eval_columns = [
+            'building_id',
+            'building_use',
+            'building_type',
+            'floor_area',
+            'floors',
+            'height',
+            'occupants',
+            'housing_units',
+            'free_walls'
+        ]
+
+        # Only include columns that exist in the data
+        available_columns = [col for col in eval_columns if col in block_buildings.columns]
+
+        # Create evaluation dataframe
+        eval_df = block_buildings[available_columns].copy()
+
+        # Add derived metrics
+        if 'occupants' in eval_df.columns and 'housing_units' in eval_df.columns:
+            eval_df['people_per_unit'] = eval_df['occupants'] / \
+                eval_df['housing_units'].replace(0, pd.NA)
+
+        if 'occupants' in eval_df.columns and 'floor_area' in eval_df.columns:
+            eval_df['people_per_sqm'] = eval_df['occupants'] / eval_df['floor_area']
+
+        # Reset index and sort by building type and size
+        eval_df = eval_df.reset_index(drop=True)
+        if 'building_type' in eval_df.columns and 'floor_area' in eval_df.columns:
+            eval_df = eval_df.sort_values(['building_type', 'floor_area'], ascending=[True, False])
+
+        # Log summary statistics
+        logger.info(f"Census Block {geoid20} Evaluation Summary:")
+        logger.info(f"  Total buildings: {len(eval_df)}")
+
+        if 'building_type' in eval_df.columns:
+            type_counts = eval_df['building_type'].value_counts()
+            logger.info(f"  Building types: {type_counts.to_dict()}")
+
+        if 'occupants' in eval_df.columns:
+            total_occupants = eval_df['occupants'].sum()
+            logger.info(f"  Total occupants: {total_occupants:.0f}")
+            logger.info(f"  Average occupants per building: {eval_df['occupants'].mean():.1f}")
+
+        if 'housing_units' in eval_df.columns:
+            total_units = eval_df['housing_units'].sum()
+            logger.info(f"  Total housing units: {total_units:.0f}")
+
+        if 'floor_area' in eval_df.columns:
+            total_area = eval_df['floor_area'].sum()
+            logger.info(f"  Total floor area: {total_area:.0f} sq m")
+
+        return eval_df
 
     def _assign_building_id(self, buildings: gpd.GeoDataFrame,
                             census_blocks: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -1710,269 +1948,67 @@ class BuildingHeuristicsProcessor:
         logger.info(
             f"After OSM processing: {height_count}/{total_buildings} buildings have height data, {floors_count}/{total_buildings} have floor data")
 
-        # # TODO: Move this to separate function after population count is allocated.
-        # Step 2: For buildings without OSM data, estimate from occupants and area
-        # logger.debug("Step 2: Estimating floors from occupants and area for remaining buildings")
-
-        # # Only process buildings that still don't have floor data (floors == 1 and no height)
-        # needs_estimation_mask = (
-        #     buildings_with_floors['floors'].isna()) | (
-        #     buildings_with_floors['height'].isna())
-
-        # logger.info(f"Length of buildings_with_floors: {len(buildings_with_floors)}")
-
-        # if needs_estimation_mask.any():
-        #     logger.debug(
-        # f"Estimating floors for {needs_estimation_mask.sum()} buildings without
-        # OSM data")
-
-        #     for idx, building in buildings_with_floors[needs_estimation_mask].iterrows():
-        #         # Check if required columns exist for estimation
-        #         if 'building_type' not in building or 'occupants' not in building:
-        #             logger.debug(
-        #                 f"Skipping estimation for building {idx}: missing building_type or occupants")
-        #             continue
-
-        #         building_type = building['building_type']
-        #         if pd.isna(building['floor_area']):
-        #             raise ValueError(f"Building {idx} has no floor area")
-        #         else:
-        #             area = building['floor_area']
-        #         occupants = building['occupants'] if pd.notna(
-        #             building['occupants']) else 2
-
-        #         if building_type == 'SFH':
-        #             # SFH: Usually 1-3 floors
-        #             if area < 100:
-        #                 buildings_with_floors.at[idx, 'floors'] = 1
-        #             elif area < 200:
-        #                 buildings_with_floors.at[idx, 'floors'] = 2
-        #             else:
-        #                 buildings_with_floors.at[idx, 'floors'] = min(3, int(occupants / 3) + 1)
-
-        #         elif building_type == 'TH':
-        #             # TH: Usually 2-3 floors
-        #             buildings_with_floors.at[idx, 'floors'] = min(
-        #                 3, max(2, int(occupants / 3) + 1))
-
-        #         elif building_type == 'MFH':
-        #             # MFH: Usually 2-5 floors
-        #             buildings_with_floors.at[idx, 'floors'] = min(
-        #                 5, max(2, int(occupants / 6) + 1))
-
-        #         elif building_type == 'AB':
-        #             # AB: Usually 4-10 floors
-        #             buildings_with_floors.at[idx, 'floors'] = min(
-        #                 10, max(4, int(occupants / 8) + 1))
-        #         else:
-        #             # Default case for unknown building types
-        #             buildings_with_floors.at[idx, 'floors'] = max(1, int(occupants / 4) + 1)
-
-        # # Step 3: Calculate height for buildings that still don't have height data
-        # missing_height_mask = buildings_with_floors['height'].isna()
-        # if missing_height_mask.any():
-        #     logger.debug(
-        #         f"Estimating height for {missing_height_mask.sum()} buildings without height data")
-        #     buildings_with_floors.loc[missing_height_mask,
-        #                               'height'] = buildings_with_floors.loc[missing_height_mask,
-        #                                                                     'floors'] * 2.5
-
-        # # Convert height to numeric, handling any string values
-        # buildings_with_floors['height'] = pd.to_numeric(
-        #     buildings_with_floors['height'], errors='coerce')
-
-        # # Log buildings with valid height measurements before clipping
-        # valid_height_before = buildings_with_floors['height'].notna().sum()
-        # buildings_below_min_floors = (buildings_with_floors['floors'] < 1).sum()
-        # buildings_below_min_height = (buildings_with_floors['height'] < 2.5).sum()
-
-        # logger.info(f"Buildings with valid height measurements: {valid_height_before}")
-        # logger.info(f"Buildings with floors < 1 (will be clipped): {buildings_below_min_floors}")
-        # logger.info(f"Buildings with height < 2.5m (will be clipped): {buildings_below_min_height}")
-
-        # # Ensure minimum values
-        # buildings_with_floors['floors'] = buildings_with_floors['floors'].clip(lower=1)
-        # buildings_with_floors['height'] = buildings_with_floors['height'].clip(
-        #     lower=2.5)  # minimum reasonable height
-
-        # # Log final statistics
-        # final_valid_height = buildings_with_floors['height'].notna().sum()
-        # final_avg_floors = buildings_with_floors['floors'].mean()
-        # final_avg_height = buildings_with_floors['height'].mean()
-
-        # logger.info(f"Final buildings with height data: {final_valid_height}/{len(buildings_with_floors)}")
-        # logger.info(f"Average floors after processing: {final_avg_floors:.2f}")
-        # logger.info(f"Average height after processing: {final_avg_height:.2f}m")
-
         return buildings_with_floors
 
-    # def allot_construction_year(self, buildings: gpd.GeoDataFrame,
-    #                             housing_age_data: Optional[Dict] = None) -> gpd.GeoDataFrame:
-    #     """
-    #     Assigns construction year periods to buildings based on
-    #     available data and statistical distribution.
+    def _allot_construction_year(self, buildings: gpd.GeoDataFrame,
+                                 nrel_vintage_distribution: Dict[str, float]) -> gpd.GeoDataFrame:
+        """
+        Allot construction year for each building based on NREL vintage distribution.
 
-    #     Parameters:
-    #     -----------
-    #     buildings : GeoDataFrame
-    #         Buildings with type and other attributes
-    #     housing_age_data : Dict, optional
-    #         Statistical data on building age distribution by region
+        Parameters:
+        -----------
+        buildings : GeoDataFrame
+            Buildings to assign construction years to
+        nrel_vintage_distribution : Dict[str, float]
+            Distribution of vintage bins with keys like '<1940', '1940s', etc. and values as percentages (0.0-1.0)
 
-    #     Returns:
-    #     --------
-    #     GeoDataFrame : Buildings with 'construction_year' column added
-    #     """
-    #     if buildings is None or len(buildings) == 0:
-    #         return buildings
+        Returns:
+        --------
+        GeoDataFrame : Buildings with added 'construction_year' column
+        """
+        if buildings.empty:
+            logger.info("No buildings to process for construction year assignment")
+            buildings['construction_year'] = None
+            return buildings
 
-    #     # Create a copy to avoid modifying the original
-    #     buildings_with_year = buildings.copy()
+        if not nrel_vintage_distribution or sum(nrel_vintage_distribution.values()) == 0:
+            logger.warning("Empty or invalid vintage distribution, assigning 'Unknown'")
+            buildings['construction_year'] = 'Unknown'
+            return buildings
 
-    #     # Initialize construction_year column
-    #     buildings_with_year['construction_year'] = None
+        # Extract vintage categories and their probabilities
+        vintage_bins = list(nrel_vintage_distribution.keys())
+        probabilities = list(nrel_vintage_distribution.values())
 
-    #     # 1. Use direct OSM data if available
-    #     logger.debug("Using OSM year or start_date tags if available")
-    #     if 'start_date' in buildings_with_year.columns:
-    #         mask = buildings_with_year['start_date'].notna()
-    #         buildings_with_year.loc[mask,
-    #                                 'construction_year'] = buildings_with_year.loc[mask,
-    #                                                                                'start_date']
+        # Normalize probabilities to ensure they sum to 1.0
+        total_prob = sum(probabilities)
+        if total_prob > 0:
+            probabilities = [p / total_prob for p in probabilities]
+        else:
+            # Fallback to uniform distribution if all probabilities are 0
+            probabilities = [1.0 / len(vintage_bins)] * len(vintage_bins)
 
-    #     # 2. Use spatial reference data
-    #     logger.debug("Using spatial reference data for construction year")
-    #     # This would spatially join with assessor or historical data
+        assigned_vintages = np.random.choice(
+            vintage_bins,
+            size=len(buildings),
+            p=probabilities
+        )
 
-    #     # 3. Apply neighborhood consistency patterns
-    #     logger.debug("Applying neighborhood consistency patterns")
-    #     # This would cluster buildings and apply consistent ages within neighborhoods
+        buildings = buildings.copy()
+        buildings['construction_year'] = assigned_vintages
 
-    #     # 4. Allocate remaining buildings based on statistical distribution
-    #     logger.debug("Allocating construction year based on statistical distribution")
+        logger.info(
+            f"Assigned construction years to {len(buildings)} buildings. "
+            f"Distribution: {dict(zip(*np.unique(assigned_vintages, return_counts=True)))}"
+        )
 
-    #     # Common categories for US buildings
-    #     periods = ['Pre-1950', '1950-1969', '1970-1989', '1990-2009', '2010-present']
-
-    #     # Default distribution if no reference data provided
-    #     distribution = {'Pre-1950': 0.2, '1950-1969': 0.2, '1970-1989': 0.25,
-    #                     '1990-2009': 0.25, '2010-present': 0.1}
-
-    #     # If housing_age_data is provided, use it to determine distribution
-    #     if housing_age_data:
-    #         # Parse housing_age_data to update distribution
-    #         pass
-
-    #     # Apply distribution to buildings with missing construction_year
-    #     mask = buildings_with_year['construction_year'].isna()
-    #     num_to_assign = mask.sum()
-
-    #     if num_to_assign > 0:
-    #         # Calculate the number of buildings for each period
-    #         period_counts = {period: int(num_to_assign * distribution[period])
-    #                          for period in periods}
-
-    #         # Adjust to make sure we assign all buildings
-    #         total_assigned = sum(period_counts.values())
-    #         if total_assigned < num_to_assign:
-    #             # Add remaining to most common period
-    #             most_common = max(distribution, key=distribution.get)
-    #             period_counts[most_common] += num_to_assign - total_assigned
-
-    #         # Create a list of periods to assign
-    #         periods_to_assign = []
-    #         for period, count in period_counts.items():
-    #             periods_to_assign.extend([period] * count)
-
-    #         # Shuffle the periods
-    #         np.random.shuffle(periods_to_assign)
-
-    #         # Assign periods to buildings
-    #         buildings_with_year.loc[mask, 'construction_year'] = periods_to_assign
-
-    #     # 5. Add confidence indicator for the source of the year data
-    #     # This is handled by the default confidence score
-
-    #     return buildings_with_year
-
-    # def allot_refurbishment_level(self, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    #     """
-    #     Assigns refurbishment level indicators to buildings based on
-    #     age, type, and statistical patterns.
-
-    #     For energy modeling, this indicates upgrades to:
-    #     - Walls (insulation)
-    #     - Roof
-    #     - Windows
-    #     - Basement/Foundation
-
-    #     Parameters:
-    #     -----------
-    #     buildings : GeoDataFrame
-    #         Buildings with type, year, and other attributes
-
-    #     Returns:
-    #     --------
-    #     GeoDataFrame : Buildings with refurbishment indicators added
-    #     """
-    #     if buildings is None or len(buildings) == 0:
-    #         return buildings
-
-    #     # Create a copy to avoid modifying the original
-    #     buildings_with_refurbishment = buildings.copy()
-
-    #     # Initialize refurbishment columns
-    #     buildings_with_refurbishment['refurb_walls'] = 0
-    #     buildings_with_refurbishment['refurb_roof'] = 0
-    #     buildings_with_refurbishment['refurb_windows'] = 0
-    #     buildings_with_refurbishment['refurb_basement'] = 0
-
-    #     # 1. Assign probability of refurbishment based on building age
-    #     logger.debug("Assigning refurbishment probabilities based on age")
-
-    #     for idx, building in buildings_with_refurbishment.iterrows():
-    #         refurb_prob = 0.0
-
-    #         # Base probability on construction year
-    #         if building['construction_year'] == 'Pre-1950':
-    #             refurb_prob = 0.9  # Older buildings very likely to have been refurbished
-    #         elif building['construction_year'] == '1950-1969':
-    #             refurb_prob = 0.8
-    #         elif building['construction_year'] == '1970-1989':
-    #             refurb_prob = 0.6
-    #         elif building['construction_year'] == '1990-2009':
-    #             refurb_prob = 0.3
-    #         elif building['construction_year'] == '2010-present':
-    #             refurb_prob = 0.0  # New buildings unlikely to be refurbished
-
-    #         # Adjust based on building type
-    #         if building['building_type'] == 'SFH':
-    #             refurb_prob *= 1.1  # SFH slightly more likely to be refurbished
-    #         elif building['building_type'] == 'AB':
-    #             refurb_prob *= 0.9  # AB slightly less likely to be refurbished
-
-    #         # Cap probability at 1.0
-    #         refurb_prob = min(1.0, refurb_prob)
-
-    #         # Assign specific refurbishment components
-    #         buildings_with_refurbishment.at[idx,
-    #                                         'refurb_walls'] = 1 if np.random.random() < refurb_prob else 0
-    #         buildings_with_refurbishment.at[idx,
-    #                                         'refurb_roof'] = 1 if np.random.random() < refurb_prob else 0
-    #         buildings_with_refurbishment.at[idx,
-    #                                         'refurb_windows'] = 1 if np.random.random() < refurb_prob else 0
-    #         buildings_with_refurbishment.at[idx, 'refurb_basement'] = 1 if np.random.random(
-    #         ) < refurb_prob * 0.7 else 0
-
-    #     # 2. Consider neighborhood effects
-    #     logger.debug("Considering neighborhood effects on refurbishment")
-    #     # This would cluster buildings and apply consistency within neighborhoods
-
-    #     return buildings_with_refurbishment
+        return buildings
 
     def write_buildings_output(self, buildings: gpd.GeoDataFrame,
                                output_dir: Union[str, Path],
-                               filename: str) -> str:
+                               filename: str,
+                               building_type: str = 'residential',
+                               pylovo_mapping: bool = False) -> str:
         """
         Writes processed building data to shapefile.
 
@@ -1984,6 +2020,11 @@ class BuildingHeuristicsProcessor:
             Path to output directory
         filename : str
             Output filename
+        building_type : str
+            Type of buildings ('residential' or 'non_residential')
+        pylovo_mapping : bool
+            If True, applies PyLOVO format (osm_id, Area, Use, etc.).
+            If False (default), preserves original column names (building_id, floor_area, etc.).
 
         Returns:
         --------
@@ -1994,50 +2035,29 @@ class BuildingHeuristicsProcessor:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = str(output_dir / filename)
 
-        # Ensure all required columns from schema are present
-        from syngrid.data_processor.processing.building_schema import BuildingOutputSchema
-        schema_fields = BuildingOutputSchema.get_schema_fields()
-
-        # Add missing columns with None values
-        for field in schema_fields:
-            if field not in buildings.columns and field != 'geometry':
-                buildings[field] = None
+        # Prepare output data based on mapping requirements
+        if pylovo_mapping:
+            # Use schema classes for PyLOVO-specific formatting
+            if building_type == 'residential':
+                output_buildings = ResidentialBuildingOutput.prepare_pylovo_output(buildings)
+                logger.info("Applied PyLOVO mapping for residential buildings")
+            else:  # non_residential
+                output_buildings = NonResidentialBuildingOutput.prepare_pylovo_output(buildings)
+                logger.info("Applied PyLOVO mapping for non-residential buildings")
+        else:
+            # Use schema classes to filter and organize columns (default behavior)
+            if building_type == 'residential':
+                output_buildings = ResidentialBuildingOutput.prepare_default_output(buildings)
+                logger.info("Applied residential schema filtering with original column names")
+            else:  # non_residential
+                output_buildings = NonResidentialBuildingOutput.prepare_default_output(buildings)
+                logger.info("Applied non-residential schema filtering with original column names")
 
         # Write shapefile
-        logger.info(f"Writing {len(buildings)} buildings to {output_path}")
-        buildings.to_file(output_path)
+        logger.info(f"Writing {len(output_buildings)} {building_type} buildings to {output_path}")
+        logger.info(f"Output columns: {list(output_buildings.columns)}")
+        output_buildings.to_file(output_path)
 
-        return output_path
-
-    def write_empty_data_stub(self, output_dir: Union[str, Path],
-                              filename: str,
-                              message: str) -> str:
-        """
-        Creates a stub text file when no buildings of a category exist.
-
-        Parameters:
-        -----------
-        output_dir : str or Path
-            Path to output directory
-        filename : str
-            Output filename
-        message : str
-            Message explaining the absence of data
-
-        Returns:
-        --------
-        str : Path to output file
-        """
-        # Create output path
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_dir / filename)
-
-        # Write text file with message
-        with open(output_path, 'w') as f:
-            f.write(message + '\n')
-
-        logger.info(f"Created empty data stub: {output_path}")
         return output_path
 
     def merge_building_layers(self, residential_path: str,
@@ -2118,25 +2138,3 @@ class BuildingHeuristicsProcessor:
         buildings['floor_area'] = buildings_projected.geometry.area
 
         return buildings
-
-    def ensure_wgs84(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """
-        Ensures any GeoDataFrame is in WGS84 (EPSG:4326) projection
-
-        Parameters:
-        -----------
-        gdf : GeoDataFrame
-            Input geodataframe in any CRS
-
-        Returns:
-        --------
-        GeoDataFrame : Input geodataframe reprojected to EPSG:4326 if needed
-        """
-        if gdf is None or len(gdf) == 0:
-            return gdf
-
-        if gdf.crs != "EPSG:4326":
-            logger.debug(f"Reprojecting from {gdf.crs} to EPSG:4326")
-            return gdf.to_crs("EPSG:4326")
-
-        return gdf
