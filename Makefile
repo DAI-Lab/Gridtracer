@@ -39,12 +39,12 @@ install-test: clean-build clean-pyc ## install the package and test dependencies
 
 .PHONY: test
 test: ## run tests quickly with the default Python
-	python -m pytest --basetemp=${ENVTMPDIR} --cov=syngrid --cov-report xml
+	python -m pytest --basetemp=${ENVTMPDIR} --cov=gridtracer --cov-report xml
 
 .PHONY: lint
 lint: ## check style with flake8 and isort
-	flake8 syngrid tests
-	isort -c syngrid tests
+	flake8 gridtracer tests
+	isort -c gridtracer tests
 
 .PHONY: install-develop
 install-develop: clean-build clean-pyc ## install the package in editable mode and dependencies for development
@@ -56,20 +56,20 @@ test-all: ## run tests on every Python version with tox
 
 .PHONY: fix-lint
 fix-lint: ## fix lint issues using autoflake, autopep8, and isort
-	find syngrid tests -name '*.py' | xargs autoflake --in-place --remove-all-unused-imports --remove-unused-variables
-	autopep8 --in-place --recursive --aggressive syngrid tests
-	isort syngrid tests
+	find gridtracer tests -name '*.py' | xargs autoflake --in-place --remove-all-unused-imports --remove-unused-variables
+	autopep8 --in-place --recursive --aggressive gridtracer tests
+	isort gridtracer tests
 
 .PHONY: coverage
 coverage: ## check code coverage quickly with the default Python
-	coverage run --source syngrid -m pytest
+	coverage run --source gridtracer -m pytest
 	coverage report -m
 	coverage html
 	$(BROWSER) htmlcov/index.html
 
 .PHONY: docs
 docs: clean-docs ## generate Sphinx HTML documentation, including API docs
-	sphinx-apidoc --separate --no-toc -o docs/api/ syngrid
+	sphinx-apidoc --separate --no-toc -o docs/api/ gridtracer
 	$(MAKE) -C docs html
 
 .PHONY: view-docs

@@ -9,7 +9,7 @@ if "%SPHINXBUILD%" == "" (
 )
 set SOURCEDIR=.
 set BUILDDIR=_build
-set SPHINXPROJ=syngrid
+set SPHINXPROJ=gridtracer
 
 if "%1" == "" goto help
 

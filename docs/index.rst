@@ -10,7 +10,7 @@
    :caption: Resources
    :hidden:
 
-   API Reference <api/syngrid>
+   API Reference <api/gridtracer>
    contributing
    authors
    history

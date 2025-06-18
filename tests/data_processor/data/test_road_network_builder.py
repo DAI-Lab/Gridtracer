@@ -12,7 +12,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import LineString
 
-from syngrid.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
+from gridtracer.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ def mock_orchestrator_for_road_network(orchestrator_with_fips, temp_output_dir, 
 @pytest.fixture
 def road_network_builder(mock_orchestrator_for_road_network):
     """Create a RoadNetworkBuilder with a mocked orchestrator and config."""
-    with patch('syngrid.data_processor.data.osm.road_network_builder.yaml.safe_load') as mock_yaml:
+    with patch('gridtracer.data_processor.data.osm.road_network_builder.yaml.safe_load') as mock_yaml:
         # Mock the YAML config for osm2po_config.yaml
         mock_yaml.return_value = {
             'way_tag_resolver': {
@@ -157,7 +157,7 @@ def test_build_network(road_network_builder, mock_osm_data):
     # that returns mock_osm_data.
 
     # Mock the to_graph and ox.simplification.simplify_graph calls
-    with patch('syngrid.data_processor.data.osm.road_network_builder.ox') as mock_ox:
+    with patch('gridtracer.data_processor.data.osm.road_network_builder.ox') as mock_ox:
         # Mock the simplify_graph and graph_to_gdfs calls
         mock_simplified_graph = MagicMock()
         mock_ox.simplification.simplify_graph.return_value = mock_simplified_graph
@@ -204,7 +204,7 @@ def test_process_method(road_network_builder, mock_osm_data, sample_boundary_gdf
     boundary_gdf = sample_boundary_gdf
 
     # Mock the to_graph and ox.simplification.simplify_graph calls
-    with patch('syngrid.data_processor.data.osm.road_network_builder.ox') as mock_ox:
+    with patch('gridtracer.data_processor.data.osm.road_network_builder.ox') as mock_ox:
         # Mock the simplify_graph and graph_to_gdfs calls
         mock_simplified_graph = MagicMock()
         mock_ox.simplification.simplify_graph.return_value = mock_simplified_graph
@@ -268,7 +268,7 @@ def test_fips_integration(road_network_builder):
     assert fips_dict['state'] == 'MA'  # From the shared fixture
 
 
-@patch('syngrid.data_processor.data.osm.road_network_builder.logger')
+@patch('gridtracer.data_processor.data.osm.road_network_builder.logger')
 def test_download_method_not_implemented(mock_logger, road_network_builder):
     """Test that download method raises NotImplementedError."""
     with pytest.raises(NotImplementedError):

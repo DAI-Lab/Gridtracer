@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Tests for `syngrid` package."""
+"""Tests for `gridtracer` package."""
 
 import unittest
 
-# from syngrid import syngrid
+# from gridtracer import gridtracer
 
 
-class TestSyngrid(unittest.TestCase):
-    """Tests for `syngrid` package."""
+class Testgridtracer(unittest.TestCase):
+    """Tests for `gridtracer` package."""
 
     def setUp(self):
         """Set up test fixtures, if any."""

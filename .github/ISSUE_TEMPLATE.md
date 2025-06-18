@@ -1,4 +1,4 @@
-* SynGrid version:
+* Gridtracer version:
 * Python version:
 * Operating System:
 

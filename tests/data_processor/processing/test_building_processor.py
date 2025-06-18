@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import Polygon
 
-from syngrid.data_processor.processing.building_processor import BuildingHeuristicsProcessor
+from gridtracer.data_processor.processing.building_processor import BuildingHeuristicsProcessor
 
 
 @pytest.fixture

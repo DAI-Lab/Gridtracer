@@ -3,10 +3,10 @@
   <i>An open source project from Data to AI Lab at MIT.</i>
 </p>
 
-[![Travis CI Shield](https://travis-ci.org/DAI-Lab/syngrid.svg?branch=master)](https://travis-ci.org/DAI-Lab/syngrid)
-[![Coverage Status](https://codecov.io/gh/DAI-Lab/syngrid/branch/master/graph/badge.svg)](https://codecov.io/gh/DAI-Lab/syngrid)
+[![Travis CI Shield](https://travis-ci.org/DAI-Lab/gridtracer.svg?branch=master)](https://travis-ci.org/DAI-Lab/gridtracer)
+[![Coverage Status](https://codecov.io/gh/DAI-Lab/gridtracer/branch/master/graph/badge.svg)](https://codecov.io/gh/DAI-Lab/gridtracer)
 
-# SynGrid
+# Gridtracer
 
 This repository is part of a **research project** developed for a master's thesis. The goal is to create a **data preprocessing pipeline** for generating georeferenced datasets that serve as the foundation for building synthetic **low-voltage grid infrastructure schemata** in the United States.
 
@@ -112,5 +112,5 @@ All outputs are organized in the following directory tree, ensuring clear separa
 
 ## Documentation
 
-- 📄 Homepage: https://github.com/DAI-Lab/syngrid
-- 📚 Documentation: https://DAI-Lab.github.io/syngrid
+- 📄 Homepage: https://github.com/DAI-Lab/gridtracer
+- 📚 Documentation: https://DAI-Lab.github.io/gridtracer

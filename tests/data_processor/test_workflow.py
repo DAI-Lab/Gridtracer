@@ -19,8 +19,8 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from syngrid.data_processor.config import ConfigLoader
-from syngrid.data_processor.workflow import ALL_DATASETS, WorkflowOrchestrator
+from gridtracer.data_processor.config import ConfigLoader
+from gridtracer.data_processor.workflow import ALL_DATASETS, WorkflowOrchestrator
 
 
 @pytest.fixture
@@ -104,7 +104,7 @@ def temp_output_dir():
 @pytest.fixture
 def mock_config_loader(sample_config, temp_output_dir):
     """Fixture providing a mocked ConfigLoader."""
-    with patch('syngrid.data_processor.workflow.ConfigLoader') as mock_loader_class:
+    with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
         mock_loader = Mock(spec=ConfigLoader)
         mock_loader.get_region.return_value = sample_config['region']
         mock_loader.get_output_dir.return_value = temp_output_dir
@@ -178,7 +178,7 @@ class TestWorkflowOrchestratorInitialization:
             # Missing county and lookup_url
         }
 
-        with patch('syngrid.data_processor.workflow.ConfigLoader') as mock_loader_class:
+        with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
             mock_loader = Mock()
             mock_loader.get_region.return_value = incomplete_config
             mock_loader.get_output_dir.return_value = temp_output_dir
@@ -447,7 +447,7 @@ class TestOSMParserIntegration:
     """Test suite for OSM parser integration."""
 
     @patch('pathlib.Path.exists')
-    @patch('syngrid.data_processor.workflow.OSM')
+    @patch('gridtracer.data_processor.workflow.OSM')
     def test_osm_parser_initialization_success(
         self,
         mock_osm_class,
@@ -503,7 +503,7 @@ class TestOSMParserIntegration:
         assert parser is None
 
     @patch('pathlib.Path.exists')
-    @patch('syngrid.data_processor.workflow.OSM')
+    @patch('gridtracer.data_processor.workflow.OSM')
     def test_osm_parser_boundary_projection(
         self,
         mock_osm_class,
@@ -546,7 +546,7 @@ class TestOSMParserIntegration:
         mock_osm_class.assert_called_once()
 
     @patch('pathlib.Path.exists')
-    @patch('syngrid.data_processor.workflow.OSM')
+    @patch('gridtracer.data_processor.workflow.OSM')
     def test_osm_parser_multiple_geometries(
         self,
         mock_osm_class,
@@ -720,7 +720,7 @@ class TestIntegrationScenarios:
             Path(filepath), fips_content
         )
 
-        with patch('syngrid.data_processor.workflow.ConfigLoader') as mock_loader_class:
+        with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
             mock_loader = Mock()
             mock_loader.get_region.return_value = config_without_subdivision['region']
             mock_loader.get_output_dir.return_value = Path(

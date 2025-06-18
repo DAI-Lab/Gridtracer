@@ -2,7 +2,7 @@
 Test module for Microsoft Buildings data handler integration.
 
 This module contains tests to verify the Microsoft Buildings data handler
-works correctly with the SynGrid pipeline, including spatial pre-filtering
+works correctly with the gridtracer pipeline, including spatial pre-filtering
 and region-specific building downloads.
 """
 
@@ -12,8 +12,8 @@ from pathlib import Path
 import geopandas as gpd
 import pytest
 
-from syngrid.data_processor.data.microsoft_buildings import MicrosoftBuildingsDataHandler
-from syngrid.data_processor.workflow import WorkflowOrchestrator
+from gridtracer.data_processor.data.microsoft_buildings import MicrosoftBuildingsDataHandler
+from gridtracer.data_processor.workflow import WorkflowOrchestrator
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -31,7 +31,7 @@ def orchestrator_with_boundary() -> WorkflowOrchestrator:
 
     # Load pre-existing census boundary for testing
     boundary_path = Path(
-        "syngrid/data_processor/output/MA/Middlesex_County/"
+        "gridtracer/data_processor/output/MA/Middlesex_County/"
         "Cambridge_city_old/Census/25_017_11000_blocks_boundary.geojson"
     )
 

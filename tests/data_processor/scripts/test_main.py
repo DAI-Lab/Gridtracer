@@ -1,5 +1,5 @@
 """
-Tests for the main SynGrid data processing pipeline script.
+Tests for the main gridtracer data processing pipeline script.
 
 These tests verify the orchestration logic, error handling, and proper
 integration between pipeline components while mocking individual handlers.
@@ -16,7 +16,7 @@ from shapely.geometry import Polygon
 if TYPE_CHECKING:
     from _pytest.logging import LogCaptureFixture
 
-from syngrid.data_processor.scripts.main import run_pipeline_v2
+from gridtracer.data_processor.scripts.main import run_pipeline_v2
 
 
 # Module-level fixtures available to all test classes
@@ -107,15 +107,15 @@ class TestMainPipeline:
     ) -> None:
         """Test successful execution of the entire pipeline."""
         # Set the logger name for caplog
-        caplog.set_level('INFO', logger='syngrid')
+        caplog.set_level('INFO', logger='gridtracer')
 
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
-                patch('syngrid.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
-                patch('syngrid.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
-                patch('syngrid.data_processor.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
-                patch('syngrid.data_processor.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
-                patch('syngrid.data_processor.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class, \
-                patch('syngrid.data_processor.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
+                patch('gridtracer.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class, \
+                patch('gridtracer.data_processor.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
 
             # Setup orchestrator mock
             mock_orchestrator = Mock()
@@ -187,22 +187,22 @@ class TestMainPipeline:
 
             # Verify logging messages (check individual message parts)
             log_text = caplog.text
-            assert "Starting SynGrid Data Processing Pipeline v2.0" in log_text
+            assert "Starting gridtracer Data Processing Pipeline v2.0" in log_text
             assert "STEP 1: Regional Data Extraction & Preparation" in log_text
             assert "STEP 2: Processing NREL data" in log_text
             assert "STEP 3.5: Processing Microsoft Buildings data" in log_text
-            assert "SynGrid Data Processing Pipeline v2.0 completed successfully." in log_text
+            assert "gridtracer Data Processing Pipeline v2.0 completed successfully." in log_text
 
     def test_census_data_failure_halts_pipeline(
         self,
         caplog: "LogCaptureFixture"
     ) -> None:
         """Test that census data processing failure halts the entire pipeline."""
-        caplog.set_level('ERROR', logger='syngrid')
+        caplog.set_level('ERROR', logger='gridtracer')
 
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
-                patch('syngrid.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
-                patch('syngrid.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
+                patch('gridtracer.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class:
 
             # Setup orchestrator mock
             mock_orchestrator = Mock()
@@ -235,11 +235,11 @@ class TestMainPipeline:
         caplog: "LogCaptureFixture"
     ) -> None:
         """Test that missing target_region_boundary in census data halts pipeline."""
-        caplog.set_level('ERROR', logger='syngrid')
+        caplog.set_level('ERROR', logger='gridtracer')
 
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
-                patch('syngrid.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
-                patch('syngrid.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
+                patch('gridtracer.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class:
 
             # Setup orchestrator mock
             mock_orchestrator = Mock()
@@ -272,12 +272,12 @@ class TestMainPipeline:
         caplog: "LogCaptureFixture"
     ) -> None:
         """Test that NREL data processing warning doesn't halt pipeline."""
-        caplog.set_level('WARNING', logger='syngrid')
+        caplog.set_level('WARNING', logger='gridtracer')
 
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
-                patch('syngrid.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
-                patch('syngrid.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
-                patch('syngrid.data_processor.scripts.main.OSMDataHandler') as mock_osm_handler_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
+                patch('gridtracer.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.OSMDataHandler') as mock_osm_handler_class:
 
             # Setup orchestrator mock
             mock_orchestrator = Mock()
@@ -314,9 +314,9 @@ class TestMainPipeline:
         caplog: "LogCaptureFixture"
     ) -> None:
         """Test handling of WorkflowOrchestrator creation failure."""
-        caplog.set_level('ERROR', logger='syngrid')
+        caplog.set_level('ERROR', logger='gridtracer')
 
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class:
             # Make orchestrator creation fail
             mock_orchestrator_class.side_effect = ValueError("Invalid configuration")
 
@@ -332,10 +332,10 @@ class TestMainPipeline:
         caplog: "LogCaptureFixture"
     ) -> None:
         """Test handling of runtime errors during pipeline execution."""
-        caplog.set_level('ERROR', logger='syngrid')
+        caplog.set_level('ERROR', logger='gridtracer')
 
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
-                patch('syngrid.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
+                patch('gridtracer.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class:
 
             # Setup orchestrator
             mock_orchestrator = Mock()
@@ -356,9 +356,9 @@ class TestMainPipeline:
         caplog: "LogCaptureFixture"
     ) -> None:
         """Test handling of unexpected errors during pipeline execution."""
-        caplog.set_level('ERROR', logger='syngrid')
+        caplog.set_level('ERROR', logger='gridtracer')
 
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class:
             # Make orchestrator creation fail with unexpected error
             mock_orchestrator_class.side_effect = TypeError("Unexpected type error")
 
@@ -377,14 +377,14 @@ class TestMainPipeline:
         caplog: "LogCaptureFixture"
     ) -> None:
         """Test warning when Microsoft Buildings data processing fails."""
-        caplog.set_level('WARNING', logger='syngrid')
+        caplog.set_level('WARNING', logger='gridtracer')
 
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
-                patch('syngrid.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
-                patch('syngrid.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
-                patch('syngrid.data_processor.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
-                patch('syngrid.data_processor.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
-                patch('syngrid.data_processor.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
+                patch('gridtracer.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class:
 
             # Setup orchestrator and successful handlers
             mock_orchestrator = Mock()
@@ -413,7 +413,7 @@ class TestMainPipeline:
             mock_building_processor_class.return_value = mock_building_processor
 
             # Mock road network builder to avoid complex setup
-            with patch('syngrid.data_processor.scripts.main.RoadNetworkBuilder'):
+            with patch('gridtracer.data_processor.scripts.main.RoadNetworkBuilder'):
                 # Execute pipeline
                 run_pipeline_v2()
 
@@ -429,11 +429,11 @@ class TestMainPipeline:
         caplog: "LogCaptureFixture"
     ) -> None:
         """Test warning when road network generation doesn't yield expected results."""
-        caplog.set_level('WARNING', logger='syngrid')
+        caplog.set_level('WARNING', logger='gridtracer')
 
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
-                patch('syngrid.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
-                patch('syngrid.data_processor.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
+                patch('gridtracer.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
 
             # Setup orchestrator and census handler
             mock_orchestrator = Mock()
@@ -451,10 +451,10 @@ class TestMainPipeline:
             mock_road_builder_class.return_value = mock_road_builder
 
             # Mock other handlers to avoid complex setup and return minimal valid data
-            with patch('syngrid.data_processor.scripts.main.NRELDataHandler') as mock_nrel_class, \
-                    patch('syngrid.data_processor.scripts.main.OSMDataHandler') as mock_osm_class, \
-                    patch('syngrid.data_processor.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_class, \
-                    patch('syngrid.data_processor.scripts.main.BuildingHeuristicsProcessor') as mock_bp_class:
+            with patch('gridtracer.data_processor.scripts.main.NRELDataHandler') as mock_nrel_class, \
+                    patch('gridtracer.data_processor.scripts.main.OSMDataHandler') as mock_osm_class, \
+                    patch('gridtracer.data_processor.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_class, \
+                    patch('gridtracer.data_processor.scripts.main.BuildingHeuristicsProcessor') as mock_bp_class:
 
                 # Setup minimal valid returns to avoid KeyError
                 mock_nrel_handler = Mock()
@@ -492,13 +492,13 @@ class TestPipelineIntegration:
         mock_microsoft_buildings_data: Dict[str, Any]
     ) -> None:
         """Test that data flows correctly between pipeline components."""
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
-                patch('syngrid.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
-                patch('syngrid.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
-                patch('syngrid.data_processor.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
-                patch('syngrid.data_processor.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
-                patch('syngrid.data_processor.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class, \
-                patch('syngrid.data_processor.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
+                patch('gridtracer.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class, \
+                patch('gridtracer.data_processor.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
 
             # Setup all mocks
             mock_orchestrator = Mock()
@@ -547,13 +547,13 @@ class TestPipelineIntegration:
 
     def test_pipeline_component_initialization_order(self) -> None:
         """Test that pipeline components are initialized in the correct order."""
-        with patch('syngrid.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
-                patch('syngrid.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
-                patch('syngrid.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
-                patch('syngrid.data_processor.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
-                patch('syngrid.data_processor.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
-                patch('syngrid.data_processor.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class, \
-                patch('syngrid.data_processor.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
+        with patch('gridtracer.data_processor.scripts.main.WorkflowOrchestrator') as mock_orchestrator_class, \
+                patch('gridtracer.data_processor.scripts.main.CensusDataHandler') as mock_census_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
+                patch('gridtracer.data_processor.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class, \
+                patch('gridtracer.data_processor.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
 
             # Setup minimal mocks to allow pipeline to complete
             mock_orchestrator = Mock()

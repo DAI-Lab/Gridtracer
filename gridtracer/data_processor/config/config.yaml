@@ -1,0 +1,29 @@
+# YAML file for configuration and paths of the data processor
+
+# Region Selection is done via the official US Census Bureau FIPS codes
+# An overview can be found here: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
+# states: MA = Massachusetts, AL = Alabama, CA = California, etc.
+# counties: Autauga County, 003 = Baldwin County, etc.
+# count_subdivisions: Autaugaville CCD,
+region:
+  state: "MA" # Valid abbreviation
+  county: "Middlesex County" # Required
+  county_subdivision: "Cambridge city" # optional, if not provided, all subdivisions will be downloaded
+  lookup_url: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
+
+# Base output directory
+output_dir: "gridtracer/data_processor/output/"  
+  
+input_data:
+  
+  # OSM PBF file path
+  # Download from https://download.geofabrik.de/ or similar source
+  osm_pbf_file: "/Users/magic-rabbit/Documents/MA-data/geofabrik_massachusetts_latest_osm.pbf"
+
+  # NREL data paths
+  nrel_data: "/Users/magic-rabbit/Documents/MA-data/NREL_Residential_typology.tsv"
+
+# Processing parameters
+processing:
+  distance_threshold_meters: 10  # Distance threshold for deduplication
+  crs: "epsg:4326"  # Coordinate reference system

@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
-from syngrid.data_processor.data.nrel import EXPECTED_VINTAGE_BINS, NRELDataHandler
+from gridtracer.data_processor.data.nrel import EXPECTED_VINTAGE_BINS, NRELDataHandler
 
 
 class TestNRELDataHandler:
@@ -55,7 +55,7 @@ class TestNRELDataHandler:
             # Missing nrel_data
         }
 
-        with patch('syngrid.data_processor.workflow.ConfigLoader') as mock_loader_class:
+        with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
             mock_loader = Mock()
             mock_loader.get_region.return_value = config_without_nrel['region']
             mock_loader.get_output_dir.return_value = temp_output_dir
@@ -70,7 +70,7 @@ class TestNRELDataHandler:
                     Path(filepath), sample_fips_csv_content
                 )
 
-                from syngrid.data_processor.workflow import WorkflowOrchestrator
+                from gridtracer.data_processor.workflow import WorkflowOrchestrator
                 orchestrator = WorkflowOrchestrator()
 
                 handler = NRELDataHandler(orchestrator)
@@ -219,7 +219,7 @@ class TestNRELDataHandler:
         config_invalid = sample_config.copy()
         config_invalid['input_data'] = {}  # No NREL data path
 
-        with patch('syngrid.data_processor.workflow.ConfigLoader') as mock_loader_class:
+        with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
             mock_loader = Mock()
             mock_loader.get_region.return_value = None  # Invalid FIPS
             mock_loader.get_output_dir.return_value = temp_output_dir
@@ -228,7 +228,7 @@ class TestNRELDataHandler:
             mock_loader_class.return_value = mock_loader
 
             with patch('urllib.request.urlretrieve'):
-                from syngrid.data_processor.workflow import WorkflowOrchestrator
+                from gridtracer.data_processor.workflow import WorkflowOrchestrator
 
                 with patch.object(WorkflowOrchestrator, '_resolve_fips_codes') as mock_fips:
                     mock_fips.side_effect = ValueError("Invalid FIPS")

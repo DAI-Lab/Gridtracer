@@ -2,7 +2,7 @@
 Test module for OSM data handler.
 
 This module contains tests to verify the OSM data handler works correctly
-with the SynGrid pipeline, including building, POI, landuse, and power
+with the gridtracer pipeline, including building, POI, landuse, and power
 infrastructure extraction using pyrosm.
 """
 
@@ -13,7 +13,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Point, Polygon
 
-from syngrid.data_processor.data.osm.osm_data_handler import OSMDataHandler
+from gridtracer.data_processor.data.osm.osm_data_handler import OSMDataHandler
 
 if TYPE_CHECKING:
     pass

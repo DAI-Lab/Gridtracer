@@ -2,7 +2,7 @@
 Test module for Census data handler.
 
 This module contains tests to verify the Census data handler works correctly
-with the SynGrid pipeline, including boundary processing, census blocks extraction,
+with the gridtracer pipeline, including boundary processing, census blocks extraction,
 and data visualization functionality.
 """
 
@@ -14,7 +14,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from syngrid.data_processor.data.census import CensusDataHandler
+from gridtracer.data_processor.data.census import CensusDataHandler
 
 
 @pytest.fixture
