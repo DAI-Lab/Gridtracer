@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 import contextily as ctx
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import osmnx as ox
 import pandas as pd
 import yaml
 from shapely.wkb import dumps as wkb_dumps
@@ -31,8 +32,8 @@ HEADER_SQL = """SET client_encoding = 'UTF8';
 DROP TABLE IF EXISTS public_2po_4pgr;
 
 CREATE TABLE public_2po_4pgr (
-    id SERIAL PRIMARY KEY,
-    osm_id bigint UNIQUE, -- Added UNIQUE constraint for potential merging
+    id integer,
+    osm_id bigint,
     osm_name character varying,
     osm_meta character varying,
     osm_source_id bigint,
@@ -49,8 +50,9 @@ CREATE TABLE public_2po_4pgr (
     y1 double precision,
     x2 double precision,
     y2 double precision,
-    geom_way geometry(LineString, 4326)
 );
+SELECT AddGeometryColumn('public_2po_4pgr', 'geom_way', 4326, 'LINESTRING', 2);
+
 """
 
 INDEX_SQL = """
@@ -89,7 +91,8 @@ class RoadNetworkBuilder(DataHandler):
             config_file (str, optional): Path to the YAML configuration file
         """
         super().__init__(orchestrator)
-        self.orchestrator = orchestrator  # Store orchestrator if needed, or ensure DataHandler does
+        # Store orchestrator if needed, or ensure DataHandler does
+        self.orchestrator = orchestrator
         self.config_file = config_file or 'syngrid/data_processor/data/osm/osm2po_config.yaml'
         self.config = self._load_config()
 
@@ -118,7 +121,6 @@ class RoadNetworkBuilder(DataHandler):
                 'flag_list': ["car", "bike", "foot"]  # Default flags for bitmask
             },
             'tileSize': 'x',  # Default: no tiling
-            'network_type': 'driving',
             'osm_pbf_file': None,  # Must be provided separately
             'output_dir': 'sql_output_chunks',
             'total_bounds': None  # e.g., [min_lon, min_lat, max_lon, max_lat]
@@ -220,8 +222,12 @@ class RoadNetworkBuilder(DataHandler):
         original_crs = edges_gdf.crs  # Preserve CRS
 
         for idx, row in tqdm(edges_gdf.iterrows()):
-            # Adapt tag extraction based on actual pyrosm output format
-            tags = {"highway": row.get("highway")}  # How does pyrosm store tags?
+            # Handle highway value - normalize lists to single values
+            highway_val = row.get("highway")
+            if isinstance(highway_val, list):
+                highway_val = highway_val[0] if highway_val else None
+
+            tags = {"highway": highway_val}
             if 'tags' in row and isinstance(row['tags'], dict):
                 tags.update(row['tags'])
 
@@ -259,14 +265,19 @@ class RoadNetworkBuilder(DataHandler):
             else:
                 processed_edge['cost'] = processed_edge['km'] * 10  # High penalty
 
-            is_oneway = str(row.get('oneway', 'no')).lower() in [
+            # Handle oneway value - normalize lists to single values
+            oneway_val = row.get('oneway', 'no')
+            if isinstance(oneway_val, list):
+                oneway_val = oneway_val[0] if oneway_val else 'no'
+
+            is_oneway = str(oneway_val).lower() in [
                 'yes', 'true', '1', '-1'
             ]
             if is_oneway:
-                if str(row.get('oneway', 'no')) == '-1':
+                if str(oneway_val) == '-1':
                     processed_edge['reverse_cost'] = processed_edge['cost']
                 else:
-                    processed_edge['reverse_cost'] = float('inf')
+                    processed_edge['reverse_cost'] = float(100_000)
             else:
                 processed_edge['reverse_cost'] = processed_edge['cost']
 
@@ -292,6 +303,14 @@ class RoadNetworkBuilder(DataHandler):
             ref_val = row.get('ref')  # Get the 'ref' tag value
 
             final_name_for_sql = "NULL"  # Default to NULL
+
+            # Handle osm_name_val - normalize lists to single values
+            if isinstance(osm_name_val, list):
+                osm_name_val = osm_name_val[0] if osm_name_val else None
+
+            # Handle ref_val - normalize lists to single values
+            if isinstance(ref_val, list):
+                ref_val = ref_val[0] if ref_val else None
 
             # Prioritize osm_name_val if it exists and is not empty
             if pd.notna(osm_name_val) and str(osm_name_val).strip():
@@ -344,7 +363,6 @@ class RoadNetworkBuilder(DataHandler):
 
     def build_network(
         self,
-        network_type: str = 'driving',
         boundary_gdf: Optional[gpd.GeoDataFrame] = None,
         plot: bool = False
     ) -> Dict[str, Any]:
@@ -352,7 +370,6 @@ class RoadNetworkBuilder(DataHandler):
         Build a routable road network from OSM data.
 
         Args:
-            network_type: Type of network to extract (e.g., 'driving', 'walking', 'cycling').
             boundary_gdf: GeoDataFrame containing the boundary polygon for clipping.
 
         Returns:
@@ -379,8 +396,36 @@ class RoadNetworkBuilder(DataHandler):
 
         try:
             logger.info(
-                f"Extracting network using pre-initialized OSM parser. Network type: {network_type}")
-            nodes, edges_gdf = osm.get_network(network_type=network_type, nodes=True)
+                "Extracting network using pre-initialized OSM parser")
+            nodes, edges_gdf = osm.get_network(nodes=True)
+
+            G = osm.to_graph(nodes, edges_gdf, graph_type="networkx")
+            G_simplified = ox.simplification.simplify_graph(G)
+
+            # G_proj = ox.projection.project_graph(G_simplified)
+            # # Now consolidate intersections with cleaned graph
+            # G_consolidated = ox.simplification.consolidate_intersections(
+            #     G_proj_clean,
+            #     rebuild_graph=True,
+            #     tolerance=15,   # meters
+            #     dead_ends=False
+            # )
+            # logger.info("Successfully consolidated intersections")
+
+            # Convert back to GeoDataFrames
+            nodes_gdf, edges_gdf = ox.graph_to_gdfs(G_simplified)
+
+            # Optional: if needed in WGS84
+            nodes_gdf = nodes_gdf.to_crs("EPSG:4326")
+            edges_gdf = edges_gdf.to_crs("EPSG:4326")
+
+            # # Simplify the graph to reduce the number of edges
+            # # Transform back geodataframe
+            # G2 = ox.simplification.simplify_graph(G)
+            # _, edges_gdf = ox.graph_to_gdfs(G2)
+
+            edges_gdf = edges_gdf.reset_index()
+
             logger.info(f"Loaded {len(nodes)} nodes and {len(edges_gdf)} total edges.")
 
             # Export road network to a single GeoJSON file
@@ -401,22 +446,35 @@ class RoadNetworkBuilder(DataHandler):
             full_sql_content.append(HEADER_SQL)
 
             if insert_value_tuples:
-                # Constructing the full INSERT INTO block
-                insert_block_parts = [
-                    "INSERT INTO public_2po_4pgr (osm_id, osm_name, osm_meta, ",
-                    "osm_source_id, osm_target_id, clazz, flags, source, target, km, ",
-                    "kmh, cost, reverse_cost, x1, y1, x2, y2, geom_way) VALUES"
+                # Chunk the insert statements into groups of 1000
+                chunk_size = 1000
+                total_chunks = (len(insert_value_tuples) + chunk_size - 1) // chunk_size
+
+                logger.info(
+                    f"Generating {len(insert_value_tuples)} insert statements in "
+                    f"{total_chunks} chunks of {chunk_size}")
+
+                # Insert statement template
+                insert_prefix_parts = [
+                    "INSERT INTO public_2po_4pgr VALUES"
                 ]
-                insert_block = "".join(insert_block_parts)
-                insert_block += "\n" + ",\n".join(insert_value_tuples) + ";\n"
-                full_sql_content.append(insert_block)
-                logger.info(f"Generated {len(insert_value_tuples)} insert statements.")
+                insert_prefix = "".join(insert_prefix_parts)
+
+                # Generate chunked INSERT statements
+                for i in range(0, len(insert_value_tuples), chunk_size):
+                    chunk = insert_value_tuples[i:i + chunk_size]
+                    chunk_insert = insert_prefix + "\n" + ",\n".join(chunk) + ";\n"
+                    full_sql_content.append(chunk_insert)
+
+                logger.info(
+                    f"Generated {total_chunks} INSERT statements with "
+                    f"{len(insert_value_tuples)} total rows.")
             else:
                 logger.warning("No insert statements generated.")
 
             full_sql_content.append(INDEX_SQL)
 
-            output_sql_file = self.dataset_output_dir / "osm2po_routing_network.sql"
+            output_sql_file = self.dataset_output_dir / "new_routing_network.sql"
             try:
                 with open(output_sql_file, "w", encoding="utf-8") as f:
                     # Add some spacing between main SQL sections
@@ -438,7 +496,7 @@ class RoadNetworkBuilder(DataHandler):
                         network_data=geojson_path,
                         boundary_gdf=boundary_gdf,
                         output_dir=plot_output_dir,
-                        title=f"Road Network - {network_type}"
+                        title="Road Network"
                     )
 
                     if viz_file:
@@ -479,11 +537,9 @@ class RoadNetworkBuilder(DataHandler):
                 - geojson_file: Path to the network GeoJSON file
                 - visualization_file: Path to the network visualization
         """
-        network_type = self.config.get('network_type', 'driving')
 
         # Build the network with boundary clipping during initial loading
         results = self.build_network(
-            network_type=network_type,
             boundary_gdf=boundary_gdf,
             plot=plot
         )
@@ -561,8 +617,7 @@ class RoadNetworkBuilder(DataHandler):
         ax.set_axis_off()
 
         # Save the plot
-        pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-        output_file = output_dir / f"road_network.png"
+        output_file = output_dir / "road_network.png"
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         plt.close()
 

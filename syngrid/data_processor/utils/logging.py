@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 
-def setup_logger(log_level=logging.INFO, log_file=None):
+def setup_logger(log_level=logging.DEBUG, log_file=None):
     """
     Set up a centralized logger for the application.
 

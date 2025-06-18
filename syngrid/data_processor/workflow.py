@@ -271,6 +271,15 @@ class WorkflowOrchestrator:
         self.region_boundary_gdf = boundary_gdf
         self.logger.info("Region boundary has been set in the orchestrator.")
 
+    def has_region_boundary(self) -> bool:
+        """
+        Check if a region boundary has been set.
+
+        Returns:
+            bool: True if region boundary is available, False otherwise.
+        """
+        return self.region_boundary_gdf is not None
+
     def get_region_boundary(self) -> gpd.GeoDataFrame:
         """
         Return the region boundary GeoDataFrame.
@@ -291,6 +300,9 @@ class WorkflowOrchestrator:
         Lazily initializes and returns the pyrosm.OSM parser object.
         This method is called by get_osm_parser() when the parser is first needed.
 
+        If a region boundary is set, it will be used as a bounding box for spatial filtering.
+        If no boundary is set, the entire PBF file will be processed.
+
         Returns:
             Optional[pyrosm.OSM]: The initialized OSM parser, or None on failure.
         """
@@ -305,36 +317,49 @@ class WorkflowOrchestrator:
             )
             return None
 
-        boundary_gdf = self.get_region_boundary()
-
         try:
-            # Ensure boundary is in WGS84 (EPSG:4326) as pyrosm expects
-            if boundary_gdf.crs is None or boundary_gdf.crs.to_epsg() != 4326:
-                self.logger.info("Re-projecting boundary to EPSG:4326 for pyrosm.")
-                boundary_gdf = boundary_gdf.to_crs("EPSG:4326")
+            # Check if a region boundary is available
+            if self.has_region_boundary():
+                boundary_gdf = self.get_region_boundary()
 
-            # Get a single geometry for the bounding box.
-            # If multiple, use unary_union to get the overall extent.
-            if len(boundary_gdf.geometry) > 1:
-                boundary_geometry = boundary_gdf.unary_union
+                # Ensure boundary is in WGS84 (EPSG:4326) as pyrosm expects
+                if boundary_gdf.crs is None or boundary_gdf.crs.to_epsg() != 4326:
+                    self.logger.info("Re-projecting boundary to EPSG:4326 for pyrosm.")
+                    boundary_gdf = boundary_gdf.to_crs("EPSG:4326")
+
+                # Get a single geometry for the bounding box.
+                # If multiple, use unary_union to get the overall extent.
+                if len(boundary_gdf.geometry) > 1:
+                    boundary_geometry = boundary_gdf.unary_union
+                    self.logger.info(
+                        "Multiple geometries found in boundary_gdf, "
+                        "using unary_union for OSM parser bounding box."
+                    )
+                elif len(boundary_gdf.geometry) == 1:
+                    boundary_geometry = boundary_gdf.geometry.iloc[0]
+
+                # Ensure the geometry is a Polygon or MultiPolygon as expected by pyrosm
+                if not isinstance(boundary_geometry, (Polygon, MultiPolygon)):
+                    self.logger.error(
+                        f"Boundary geometry is not a Polygon or MultiPolygon "
+                        f"(type: {type(boundary_geometry)}). "
+                        "OSM parser might not work as expected."
+                    )
+
                 self.logger.info(
-                    "Multiple geometries found in boundary_gdf, "
-                    "using unary_union for OSM parser bounding box."
+                    f"Initializing pyrosm.OSM with PBF: {osm_pbf_path} and derived bounding box."
                 )
-            elif len(boundary_gdf.geometry) == 1:
-                boundary_geometry = boundary_gdf.geometry.iloc[0]
+                osm_parser = OSM(str(osm_pbf_path), bounding_box=boundary_geometry)
+                self.logger.info("pyrosm.OSM parser initialized successfully with bounding box.")
+            else:
+                # No boundary set - process entire PBF file
+                self.logger.info(
+                    f"No region boundary set. Initializing pyrosm.OSM with entire PBF file: "
+                    f"{osm_pbf_path}"
+                )
+                osm_parser = OSM(str(osm_pbf_path))
+                self.logger.info("pyrosm.OSM parser initialized successfully for entire PBF file.")
 
-            # Ensure the geometry is a Polygon or MultiPolygon as expected by pyrosm
-            if not isinstance(boundary_geometry, (Polygon, MultiPolygon)):
-                self.logger.error(
-                    f"Boundary geometry is not a Polygon or MultiPolygon (type: {type(boundary_geometry)}). "
-                    "OSM parser might not work as expected."
-                )
-            self.logger.info(
-                f"Initializing pyrosm.OSM with PBF: {osm_pbf_path} and derived bounding box."
-            )
-            osm_parser = OSM(str(osm_pbf_path), bounding_box=boundary_geometry)
-            self.logger.info("pyrosm.OSM parser initialized successfully.")
             return osm_parser
         except FileNotFoundError:
             self.logger.error(

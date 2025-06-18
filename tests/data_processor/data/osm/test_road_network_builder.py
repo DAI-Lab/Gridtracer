@@ -9,7 +9,6 @@ import os
 from unittest.mock import MagicMock, patch
 
 import geopandas as gpd
-import pandas as pd
 import pytest
 from shapely.geometry import LineString
 
@@ -29,15 +28,17 @@ def mock_osm_data():
         'v': [2],  # target node id
         'length': [1000]  # 1 km in meters
     }
-    edges = gpd.GeoDataFrame(data, geometry=geometries, crs="EPSG:4326")
+    edges = gpd.GeoDataFrame(data, geometry=geometries, crs="EPSG:3857")  # Use projected CRS
 
-    # Create nodes
+    # Create nodes as GeoDataFrame with point geometries
+    from shapely.geometry import Point
     nodes_data = {
         'id': [1, 2],
         'lat': [0, 1],
         'lon': [0, 1]
     }
-    nodes = pd.DataFrame(nodes_data)
+    nodes_geom = [Point(0, 0), Point(1, 1)]
+    nodes = gpd.GeoDataFrame(nodes_data, geometry=nodes_geom, crs="EPSG:3857")  # Use projected CRS
 
     return nodes, edges
 
@@ -61,6 +62,11 @@ def mock_orchestrator_for_road_network(orchestrator_with_fips, temp_output_dir, 
     mock_osm_parser = MagicMock()
     nodes, edges = mock_osm_data
     mock_osm_parser.get_network.return_value = (nodes, edges)
+
+    # Mock the to_graph method to return a simple graph object
+    mock_graph = MagicMock()
+    mock_osm_parser.to_graph.return_value = mock_graph
+
     orchestrator.get_osm_parser = MagicMock(return_value=mock_osm_parser)
 
     return orchestrator
@@ -150,39 +156,44 @@ def test_build_network(road_network_builder, mock_osm_data):
     # The mock_orchestrator in road_network_builder fixture already provides a mock OSM parser
     # that returns mock_osm_data.
 
-    # Build the network
-    results = road_network_builder.build_network(
-        network_type='driving'  # network_type is still passed
-        # osm_pbf_file is no longer passed directly
-    )
+    # Mock the to_graph and ox.simplification.simplify_graph calls
+    with patch('syngrid.data_processor.data.osm.road_network_builder.ox') as mock_ox:
+        # Mock the simplify_graph and graph_to_gdfs calls
+        mock_simplified_graph = MagicMock()
+        mock_ox.simplification.simplify_graph.return_value = mock_simplified_graph
+        nodes, edges = mock_osm_data
+        # Return both nodes and edges GeoDataFrames (not None for nodes)
+        mock_ox.graph_to_gdfs.return_value = (nodes.reset_index(), edges.reset_index())
 
-    # Verify the orchestrator's OSM parser was used
-    road_network_builder.orchestrator.get_osm_parser.assert_called_once()
-    # Verify the mock OSM parser's get_network was called
-    mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
-    mock_osm_parser_instance.get_network.assert_called_once_with(
-        network_type='driving', nodes=True)
+        # Build the network
+        results = road_network_builder.build_network()
 
-    # Check results - nodes might not be explicitly returned by build_network
-    # Depending on the RoadNetworkBuilder.build_network implementation,
-    # 'nodes' key might not be in results. Update as per actual implementation.
-    # assert results['nodes'] is not None
-    assert results['edges'] is not None
-    assert results['sql_file'] is not None
-    assert results['sql_file'].name == "osm2po_routing_network.sql"
-    assert results['geojson_file'] is not None  # Changed from raw_edges_file
+        # Verify the orchestrator's OSM parser was used
+        road_network_builder.orchestrator.get_osm_parser.assert_called_once()
+        # Verify the mock OSM parser's get_network was called
+        mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
+        mock_osm_parser_instance.get_network.assert_called_once_with(nodes=True)
 
-    # Verify files were created
-    assert os.path.exists(results['sql_file'])
-    assert os.path.exists(results['geojson_file'])  # Changed from raw_edges_file
+        # Check results - nodes might not be explicitly returned by build_network
+        # Depending on the RoadNetworkBuilder.build_network implementation,
+        # 'nodes' key might not be in results. Update as per actual implementation.
+        # assert results['nodes'] is not None
+        assert results['edges'] is not None
+        assert results['sql_file'] is not None
+        assert results['sql_file'].name == "new_routing_network.sql"
+        assert results['geojson_file'] is not None  # Changed from raw_edges_file
 
-    # Check SQL file content
-    with open(results['sql_file'], 'r') as f:
-        sql_content = f.read()
-        # Check for key SQL elements
-        assert "CREATE TABLE public_2po_4pgr" in sql_content
-        assert "INSERT INTO public_2po_4pgr" in sql_content
-        assert "CREATE INDEX" in sql_content
+        # Verify files were created
+        assert os.path.exists(results['sql_file'])
+        assert os.path.exists(results['geojson_file'])  # Changed from raw_edges_file
+
+        # Check SQL file content
+        with open(results['sql_file'], 'r') as f:
+            sql_content = f.read()
+            # Check for key SQL elements
+            assert "CREATE TABLE public_2po_4pgr" in sql_content
+            assert "INSERT INTO public_2po_4pgr" in sql_content
+            assert "CREATE INDEX" in sql_content
 
 
 def test_process_method(road_network_builder, mock_osm_data, sample_boundary_gdf):
@@ -192,21 +203,29 @@ def test_process_method(road_network_builder, mock_osm_data, sample_boundary_gdf
     # Use the shared boundary fixture instead of creating our own
     boundary_gdf = sample_boundary_gdf
 
-    # Call process method
-    results = road_network_builder.process(boundary_gdf=boundary_gdf)
+    # Mock the to_graph and ox.simplification.simplify_graph calls
+    with patch('syngrid.data_processor.data.osm.road_network_builder.ox') as mock_ox:
+        # Mock the simplify_graph and graph_to_gdfs calls
+        mock_simplified_graph = MagicMock()
+        mock_ox.simplification.simplify_graph.return_value = mock_simplified_graph
+        nodes, edges = mock_osm_data
+        # Return both nodes and edges GeoDataFrames (not None for nodes)
+        mock_ox.graph_to_gdfs.return_value = (nodes.reset_index(), edges.reset_index())
 
-    # Verify the orchestrator's OSM parser was used and its get_network was called
-    road_network_builder.orchestrator.get_osm_parser.assert_called_once()
-    mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
-    # The process method calls build_network, which calls get_network
-    mock_osm_parser_instance.get_network.assert_called_once_with(
-        network_type='driving', nodes=True)
+        # Call process method
+        results = road_network_builder.process(boundary_gdf=boundary_gdf)
 
-    # Verify results
-    # assert results['nodes'] is not None # Check if 'nodes' is expected
-    assert results['edges'] is not None
-    assert results['sql_file'] is not None
-    assert 'edges' in results  # Changed from 'clipped_edges'
+        # Verify the orchestrator's OSM parser was used and its get_network was called
+        road_network_builder.orchestrator.get_osm_parser.assert_called_once()
+        mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
+        # The process method calls build_network, which calls get_network
+        mock_osm_parser_instance.get_network.assert_called_once_with(nodes=True)
+
+        # Verify results
+        # assert results['nodes'] is not None # Check if 'nodes' is expected
+        assert results['edges'] is not None
+        assert results['sql_file'] is not None
+        assert 'edges' in results  # Changed from 'clipped_edges'
 
 
 def test_process_and_write_edges(road_network_builder, mock_osm_data):

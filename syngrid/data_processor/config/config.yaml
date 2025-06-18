@@ -8,7 +8,7 @@
 region:
   state: "MA" # Valid abbreviation
   county: "Middlesex County" # Required
-  county_subdivision: "" # optional, if not provided, all subdivisions will be downloaded
+  county_subdivision: "Cambridge city" # optional, if not provided, all subdivisions will be downloaded
   lookup_url: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
 
 # Base output directory
@@ -19,7 +19,7 @@ input_data:
   # OSM PBF file path
   # Download from https://download.geofabrik.de/ or similar source
   osm_pbf_file: "/Users/magic-rabbit/Documents/MA-data/geofabrik_massachusetts_latest_osm.pbf"
-  
+
   # NREL data paths
   nrel_data: "/Users/magic-rabbit/Documents/MA-data/NREL_Residential_typology.tsv"
 
