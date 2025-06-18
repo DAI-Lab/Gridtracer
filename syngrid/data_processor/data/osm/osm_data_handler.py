@@ -10,10 +10,8 @@ import traceback
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import geopandas as gpd
-import pyproj
 from pyrosm import OSM
 from shapely.geometry import Point
-from shapely.ops import transform
 
 from syngrid.data_processor.data.base import DataHandler
 
@@ -91,9 +89,10 @@ class OSMDataHandler(DataHandler):
             logger.error(f"Error setting specific boundary for OSMDataHandler: {e}", exc_info=True)
             return False
 
-    def deduplicate_power_features(self, power_gdf, distance_threshold_meters=10):
+    def deduplicate_power_features(self, power_gdf, distance_threshold_meters=15):
         """
         Deduplicate power infrastructure features that are within a distance threshold.
+    
 
         Args:
             power_gdf (GeoDataFrame): GeoDataFrame containing power infrastructure features
@@ -105,95 +104,194 @@ class OSMDataHandler(DataHandler):
         if power_gdf is None or power_gdf.empty:
             return power_gdf
 
+        logger.info(f"Deduplicating power features (threshold: {distance_threshold_meters}m)")
+        initial_count = len(power_gdf)
+
+        # Project to US National Grid (EPSG:5070) for accurate distance calculations
+        power_projected = power_gdf.to_crs('EPSG:5070')
+
+        # Define priority: substation > transformer > pole
+        power_priority = {'substation': 3, 'transformer': 2, 'pole': 1}
+        power_projected['priority'] = power_projected['power'].map(power_priority).fillna(0)
+
+        # Sort by priority (highest first) to process important features first
+        power_sorted = power_projected.sort_values('priority', ascending=False).reset_index()
+
+        # Track which features to keep
+        selected_indices = []
+        processed_geometries = []
+
+        for _, row in power_sorted.iterrows():
+            current_geom = row.geometry
+            original_idx = row['index']  # This is the original index from power_gdf
+
+            # Check if this feature is too close to any already selected feature
+            is_duplicate = False
+            for selected_geom in processed_geometries:
+                if current_geom.distance(selected_geom) <= distance_threshold_meters:
+                    is_duplicate = True
+                    break
+
+            # If not a duplicate, keep this feature
+            if not is_duplicate:
+                selected_indices.append(original_idx)
+                processed_geometries.append(current_geom)
+
+        # Create deduplicated GeoDataFrame
+        deduplicated_gdf = power_gdf.loc[selected_indices].copy()
+
+        removed_count = initial_count - len(deduplicated_gdf)
         logger.info(
-            f"Deduplicating power features (threshold: {distance_threshold_meters}m)")
-
-        # Create a projection for accurate distance calculation
-        wgs84 = pyproj.CRS('EPSG:4326')
-        utm = pyproj.CRS('EPSG:32619')  # UTM zone 19N (Northeast US), adjust as needed
-        project = pyproj.Transformer.from_crs(wgs84, utm, always_xy=True).transform
-
-        # Create UTM-projected geometries for distance calculation
-        power_gdf['geometry_utm'] = power_gdf.geometry.apply(
-            lambda geom: transform(project, geom) if geom else None
+            f"Removed {removed_count} duplicate features, {len(deduplicated_gdf)} remaining"
         )
 
-        # Create a copy to avoid modifying during iteration
-        deduplicated_indices = []
-        to_remove = set()
-
-        # Get feature indices by type priority (Way > Relation > Node)
-        way_indices = power_gdf[power_gdf['element_type'] == 'way'].index.tolist()
-        relation_indices = power_gdf[power_gdf['element_type'] == 'relation'].index.tolist()
-        node_indices = power_gdf[power_gdf['element_type'] == 'node'].index.tolist()
-
-        # Process in priority order
-        for priority_indices in [way_indices, relation_indices, node_indices]:
-            for idx in priority_indices:
-                if idx in to_remove:
-                    continue
-
-                # Get the UTM geometry for this feature
-                geom_utm = power_gdf.loc[idx, 'geometry_utm']
-
-                if geom_utm is None:
-                    continue
-
-                # Find all features within threshold distance
-                for other_idx, other_row in power_gdf.iterrows():
-                    if (other_idx == idx or other_idx in to_remove
-                            or other_idx in deduplicated_indices):
-                        continue
-
-                    other_geom_utm = other_row['geometry_utm']
-                    if other_geom_utm is None:
-                        continue
-
-                    # Calculate distance in meters
-                    distance = geom_utm.distance(other_geom_utm)
-
-                    if distance <= distance_threshold_meters:
-                        # Mark for removal based on type priority
-                        idx_type = power_gdf.loc[idx, 'element_type']
-                        other_type = other_row['element_type']
-
-                        if idx_type == 'way' and other_type != 'way':
-                            to_remove.add(other_idx)
-                        elif idx_type == 'relation' and other_type == 'node':
-                            to_remove.add(other_idx)
-                        elif idx_type == other_type:
-                            # If same type, keep the one with more tags/information
-                            idx_tags = (len(power_gdf.loc[idx, 'tags'])
-                                        if isinstance(power_gdf.loc[idx, 'tags'], dict) else 0)
-                            other_tags = (len(other_row['tags'])
-                                          if isinstance(other_row['tags'], dict) else 0)
-
-                            if idx_tags >= other_tags:
-                                to_remove.add(other_idx)
-                            else:
-                                to_remove.add(idx)
-                                break  # Stop checking this feature as it's being removed
-                        else:
-                            to_remove.add(idx)
-                            break  # Stop checking this feature as it's being removed
-
-                # If this feature wasn't removed, add it to deduplicated list
-                if idx not in to_remove:
-                    deduplicated_indices.append(idx)
-
-        # Remove temporary UTM geometry column
-        power_gdf = power_gdf.drop(columns=['geometry_utm'])
-
-        # Create new GeoDataFrame with deduplicated features
-        deduplicated_gdf = power_gdf.loc[deduplicated_indices].copy()
-
-        logger.info(
-            f"Removed {len(to_remove)} duplicate features, {len(deduplicated_gdf)} remaining")
         return deduplicated_gdf
+
+    def filter_by_voltage(self, power_gdf: gpd.GeoDataFrame,
+                          max_voltage: float = 130_000) -> gpd.GeoDataFrame:
+        """
+        Filter out high-voltage transmission infrastructure by checking the 'voltage' tag.
+
+        Args:
+            power_gdf: GeoDataFrame containing power infrastructure
+            max_voltage: Maximum voltage in volts to keep (default 130,000V for distribution)
+
+        Returns:
+            GeoDataFrame: Filtered GeoDataFrame
+        """
+        logger.info(f"Filtering power features by voltage (max: {max_voltage} Volts)")
+
+        # If 'tags' column doesn't exist, there's nothing to filter by voltage.
+        if 'tags' not in power_gdf.columns:
+            logger.warning("No 'tags' column found, skipping voltage filtering.")
+            return power_gdf
+
+        def parse_voltage_simple(voltage_str):
+            if not voltage_str:
+                return None
+            try:
+                # Handle "132000;33000" format - take first value
+                if ';' in str(voltage_str):
+                    voltage_str = str(voltage_str).split(';')[0]
+                # Handle "115000" format - just convert to int
+                return int(str(voltage_str).strip())
+            except (ValueError, TypeError):
+                return None
+
+        def get_voltage_from_tags(tags):
+            if not isinstance(tags, dict):
+                return None
+            return parse_voltage_simple(tags.get('voltage'))
+
+        # Get voltage values from the 'tags' column
+        voltage_values = power_gdf['tags'].apply(get_voltage_from_tags)
+        
+        # Keep features with no voltage info or voltage <= threshold
+        # Using Series.isna() is a robust way to check for both None and NaN
+        voltage_mask = voltage_values.isna() | (voltage_values <= max_voltage)
+
+        # Log the voltage distribution
+        voltage_distribution = voltage_values.value_counts(dropna=False)
+        logger.info(f"Voltage distribution: {voltage_distribution}")
+
+        filtered_count = len(power_gdf) - voltage_mask.sum()
+        logger.info(f"Removed {filtered_count} high-voltage features")
+
+        return power_gdf[voltage_mask]
+
+    def filter_transmission_tags(self, power_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """
+        Remove features tagged as transmission infrastructure.
+        Simple check: skip if substation or transformer tag equals 'transmission'.
+
+        Args:
+            power_gdf: GeoDataFrame containing power infrastructure
+
+        Returns:
+            GeoDataFrame: Filtered GeoDataFrame
+        """
+        def is_transmission_feature(row):
+            """
+            Check if feature is transmission-level infrastructure.
+            Simple check: substation == 'transmission' OR transformer == 'transmission'
+            """
+            return (row.get('substation') == 'transmission'
+                    or row.get('transformer') == 'transmission')
+
+        # Apply transmission filter
+        transmission_mask = ~power_gdf.apply(is_transmission_feature, axis=1)
+
+        filtered_count = len(power_gdf) - transmission_mask.sum()
+        logger.info(f"Removed {filtered_count} transmission features")
+
+        return power_gdf[transmission_mask]
+
+    def remove_contained_points(self, power_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """
+        Remove point features that fall within polygon substations.
+
+        Args:
+            power_gdf: GeoDataFrame containing power infrastructure
+
+        Returns:
+            GeoDataFrame: Filtered GeoDataFrame
+        """
+        # Separate points and polygons
+        points = power_gdf[power_gdf.geometry.geom_type == 'Point'].copy()
+        polygons = power_gdf[power_gdf.geometry.geom_type.isin(['Polygon', 'MultiPolygon'])].copy()
+
+        if polygons.empty or points.empty:
+            logger.info("No polygon-point conflicts to resolve")
+            return power_gdf
+
+        # Create union of all polygons
+        polygon_union = polygons.geometry.unary_union
+
+        # Find points within polygons
+        contained_mask = points.geometry.within(polygon_union)
+        indices_to_remove = points[contained_mask].index
+
+        filtered_count = len(indices_to_remove)
+        logger.info(f"Removed {filtered_count} points contained within polygons")
+
+        return power_gdf.drop(indices_to_remove)
+
+    def convert_to_centroids(self, power_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """
+        Convert all geometries to centroids (points only output).
+
+        Args:
+            power_gdf: GeoDataFrame containing power infrastructure
+
+        Returns:
+            GeoDataFrame: GeoDataFrame with all geometries as points
+        """
+        logger.info("Converting all geometries to centroids")
+
+        # Project to US National Grid (EPSG:5070) for accurate centroid calculation
+        power_projected = power_gdf.to_crs('EPSG:5070')
+
+        # Store original geometry type and area
+        power_projected['geom_type'] = power_projected.geometry.geom_type
+        power_projected['area'] = power_projected.geometry.apply(
+            lambda geom: (geom.area if hasattr(geom, 'area')
+                          and geom.geom_type in ['Polygon', 'MultiPolygon'] else 0)
+        )
+
+        # Convert all geometries to centroids
+        power_projected['geometry'] = power_projected.geometry.centroid
+
+        # Convert back to WGS84 for final output
+        power_centroids = power_projected.to_crs('EPSG:4326')
+
+        logger.info(f"Converted {len(power_centroids)} features to centroid points")
+
+        return power_centroids
 
     def extract_power_infrastructure(self, osm_parser: OSM):
         """
         Extract power infrastructure using the shared pyrosm parser from the orchestrator.
+        Enhanced with voltage, area, and transmission filtering.
         """
         if osm_parser is None:
             logger.error(
@@ -207,79 +305,79 @@ class OSMDataHandler(DataHandler):
         power_features = osm_parser.get_data_by_custom_criteria(
             custom_filter={
                 "power": power_tags},
-            keep_nodes=False,
+            keep_nodes=True,
             keep_ways=True,
             keep_relations=True)
 
-        # save RAW power features to file
+        if power_features is None or power_features.empty:
+            logger.warning("No power infrastructure found in OpenStreetMap")
+            return None, None
+
+        # Save RAW power features to file
         raw_power_filepath = self.dataset_output_dir / "raw" / "raw_power.geojson"
         raw_power_filepath.parent.mkdir(parents=True, exist_ok=True)
         power_features.to_file(raw_power_filepath, driver="GeoJSON")
+
+        # Initial logging with detailed breakdown
+        initial_count = len(power_features)
 
         # Add element_type column based on geometry
         power_features['element_type'] = power_features.geometry.apply(
             lambda g: 'node' if isinstance(g, Point) else 'way'
         )
 
-        # Filter abandoned infrastructure and keep only poles with transformers
-        filtered_features = power_features.copy()
+        # Step 1: Filter by voltage (keep only distribution level ≤130kV)
+        power_features = self.filter_by_voltage(power_features)
 
-        # Check if feature is abandoned
-        def is_abandoned(tags):
-            if not isinstance(tags, dict):
-                return False
+        # Step 2: Remove points contained within polygons
+        power_features = self.remove_contained_points(power_features)
 
-            tag_dict = tags if isinstance(tags, dict) else {}
-            return (tag_dict.get('abandoned') == 'yes'
-                    or tag_dict.get('abandoned:substation') == 'yes'
-                    or tag_dict.get('abandoned:building') == 'transformer')
+        # Step 3: Filter distribution poles
+        def has_distribution_transformer(row):
+            return row.get('transformer') == 'distribution'
 
-        # Check if pole has a distribution transformer
-        def has_distribution_transformer(tags):
-            if not isinstance(tags, dict):
-                return False
+        transformer_substation_mask = power_features['power'].isin(['transformer', 'substation'])
+        poles_mask = ((power_features['power'] == 'pole')
+                      & power_features.apply(has_distribution_transformer, axis=1))
 
-            tag_dict = tags if isinstance(tags, dict) else {}
-            return tag_dict.get('transformer') == 'distribution'
+        final_mask = transformer_substation_mask | poles_mask
+        power_features = power_features[final_mask]
 
-        filtered_features['tags'] = filtered_features.apply(
-            lambda row: {col: row[col] for col in row.index if col not in
-                         ['geometry', 'element_type', 'osmid', 'tags']},
-            axis=1
+        # Step 4: Spatial deduplication
+        deduplicated_power_features = self.deduplicate_power_features(power_features)
+
+        # Step 5: Filter by transmission tags
+        final_features = self.filter_transmission_tags(deduplicated_power_features)
+
+        # Step 6: Convert all geometries to centroids (FINAL STEP)
+        centroids_power_features = self.convert_to_centroids(final_features)
+
+        # Add properties for output format
+        centroids_power_features['osm_id'] = centroids_power_features.apply(
+            lambda row: f"{row['element_type']}/{row.get('id', row.name)}", axis=1
         )
 
-        # Get power type from columns
-        filtered_features['power'] = filtered_features['tags'].apply(
-            lambda tag_dict: tag_dict.get('power') if isinstance(tag_dict, dict) else None
+        # Save final power features (centroids only)
+        power_filepath = self.dataset_output_dir / "power.geojson"
+        centroids_power_features.to_file(power_filepath, driver="GeoJSON")
+
+        # Final summary
+        total_removed = initial_count - len(centroids_power_features)
+        reduction_percent = (total_removed / initial_count) * 100 if initial_count > 0 else 0
+
+        final_power_types = centroids_power_features['power'].value_counts()
+
+        logger.info("=== PIPELINE SUMMARY ===")
+        logger.info("Initial features: %s", initial_count)
+        logger.info("Final features: %s", len(centroids_power_features))
+        logger.info("Total removed: %s (%.1f%%)", total_removed, reduction_percent)
+        logger.info("Final power type distribution: %s", dict(final_power_types))
+        logger.info(
+            "Successfully extracted %s power features as centroids",
+            len(centroids_power_features)
         )
 
-        # Apply filters
-        non_abandoned_mask = ~filtered_features['tags'].apply(is_abandoned)
-        transformer_substation_mask = filtered_features['power'].isin(
-            ['transformer', 'substation'])
-
-        # For poles, keep only those with distribution transformers
-        poles_mask = ((filtered_features['power'] == 'pole')
-                      & filtered_features['tags'].apply(has_distribution_transformer))
-
-        # Combine masks
-        final_mask = (transformer_substation_mask & non_abandoned_mask) | poles_mask
-        filtered_features = filtered_features[final_mask]
-
-        if power_features is None or power_features.empty:
-            logger.warning("No power infrastructure found in OpenStreetMap")
-            return None, None
-        else:
-            deduplicated_power_features = self.deduplicate_power_features(filtered_features)
-            # Save power features
-            power_filepath = self.dataset_output_dir / "power.geojson"
-            deduplicated_power_features.to_file(power_filepath, driver="GeoJSON")
-
-            logger.info(
-                f"Successfully extracted {len(deduplicated_power_features)} power features "
-                f"with pyrosm"
-            )
-            return deduplicated_power_features, power_filepath
+        return centroids_power_features, power_filepath
 
     def extract_buildings(self, osm_parser: OSM):
         """

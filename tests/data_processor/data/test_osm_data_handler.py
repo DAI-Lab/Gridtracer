@@ -624,17 +624,21 @@ class TestPowerInfrastructureExtraction:
             osm_data_handler: Handler fixture.
             mock_osm_parser: Mocked OSM parser.
         """
-        # Create power data with abandoned and valid features
+        # Create power data to test filtering for valid features
         power_data = {
-            'osmid': [300, 301, 302, 303],
-            'power': ['transformer', 'substation', 'pole', 'pole'],
-            'transformer': [None, None, 'distribution', None],
-            'abandoned': [None, 'yes', None, None],  # Second should be filtered out
+            'osmid': [300, 302, 303],
+            'power': ['transformer', 'pole', 'pole'],
+            'transformer': [None, 'distribution', None],
+            'tags': [
+                {'power': 'transformer'},
+                {'power': 'pole', 'transformer': 'distribution'},
+                {'power': 'pole'}
+            ],
             'geometry': [
                 Point(-71.1, 42.3),
-                Point(-71.09, 42.31),  # This should be filtered (abandoned)
                 Point(-71.08, 42.32),
-                Point(-71.07, 42.33)   # This should be filtered (pole without distribution transformer)
+                # This pole should be filtered out as it's not a distribution pole
+                Point(-71.07, 42.33)
             ]
         }
         filtered_power_gdf = gpd.GeoDataFrame(power_data, crs="EPSG:4326")
@@ -643,8 +647,12 @@ class TestPowerInfrastructureExtraction:
         power, filepath = osm_data_handler.extract_power_infrastructure(mock_osm_parser)
 
         assert power is not None
-        # Should keep transformer and pole with distribution transformer (2 features)
+        # Should keep the transformer and the pole with a distribution tag (2 features)
         assert len(power) == 2
+        assert 'transformer' in power['power'].values
+        assert 'pole' in power['power'].values
+        # Ensure the plain pole was filtered
+        assert 303 not in power['osmid'].values
 
     def test_extract_power_infrastructure_empty_result(
         self,
@@ -680,11 +688,11 @@ class TestPowerInfrastructureExtraction:
         power_data = {
             'osmid': [300, 301, 302],
             'power': ['transformer', 'transformer', 'substation'],
-            'element_type': ['way', 'node', 'way'],
             'tags': [{'power': 'transformer'}, {'power': 'transformer'}, {'power': 'substation'}],
             'geometry': [
                 Point(-71.1, 42.3),
-                Point(-71.100001, 42.300001),  # Very close to first point (should be deduplicated)
+                # Very close to first point (should be deduplicated)
+                Point(-71.100001, 42.300001),
                 Point(-71.08, 42.32)  # Far enough away
             ]
         }
@@ -694,9 +702,10 @@ class TestPowerInfrastructureExtraction:
             power_gdf, distance_threshold_meters=10)
 
         assert deduplicated is not None
-        # Should remove the close duplicate, keeping way over node (priority)
+        # Should remove the close duplicate, keeping the substation and one transformer
         assert len(deduplicated) == 2
-        assert 'way' in deduplicated['element_type'].values
+        assert 'substation' in deduplicated['power'].values
+        assert 'transformer' in deduplicated['power'].values
 
     def test_deduplicate_power_features_empty_input(
         self,
@@ -725,6 +734,65 @@ class TestPowerInfrastructureExtraction:
         """
         result = osm_data_handler.deduplicate_power_features(None)
         assert result is None
+
+    def test_filter_by_voltage(self, osm_data_handler: OSMDataHandler) -> None:
+        """Test filtering by voltage."""
+        power_data = {
+            'power': ['transformer', 'substation', 'pole'],
+            'tags': [
+                {'voltage': '150000'},
+                {'voltage': '11000'},
+                {}  # No voltage tag
+            ],
+            'geometry': [Point(1, 1), Point(2, 2), Point(3, 3)]
+        }
+        power_gdf = gpd.GeoDataFrame(power_data, crs="EPSG:4326")
+        print(power_gdf)
+
+        filtered_gdf = osm_data_handler.filter_by_voltage(power_gdf)
+        print(f"Filtered power gdf: {filtered_gdf}")
+        assert len(filtered_gdf) == 2
+        assert '150000' not in [t.get('voltage') for t in filtered_gdf['tags']]
+
+    def test_filter_transmission_tags(self, osm_data_handler: OSMDataHandler) -> None:
+        """Test filtering of transmission tags."""
+        power_data = {
+            'power': ['substation', 'transformer'],
+            'substation': ['transmission', None],
+            'transformer': [None, 'distribution']
+        }
+        power_gdf = gpd.GeoDataFrame(power_data)
+        filtered_gdf = osm_data_handler.filter_transmission_tags(power_gdf)
+        assert len(filtered_gdf) == 1
+        assert 'transmission' not in filtered_gdf['substation'].values
+
+    def test_remove_contained_points(self, osm_data_handler: OSMDataHandler) -> None:
+        """Test removal of points contained within polygons."""
+        power_data = {
+            'power': ['substation', 'transformer'],
+            'geometry': [
+                Polygon([(0, 0), (0, 10), (10, 10), (10, 0)]),  # Substation polygon
+                Point(5, 5)  # Transformer point inside the substation
+            ]
+        }
+        power_gdf = gpd.GeoDataFrame(power_data, crs="EPSG:4326")
+        filtered_gdf = osm_data_handler.remove_contained_points(power_gdf)
+        assert len(filtered_gdf) == 1
+        assert filtered_gdf.iloc[0].geometry.geom_type == 'Polygon'
+
+    def test_convert_to_centroids(self, osm_data_handler: OSMDataHandler) -> None:
+        """Test conversion of geometries to centroids."""
+        power_data = {
+            'power': ['substation', 'transformer'],
+            'geometry': [
+                Polygon([(0, 0), (0, 10), (10, 10), (10, 0)]),
+                Point(1, 1)
+            ]
+        }
+        power_gdf = gpd.GeoDataFrame(power_data, crs="EPSG:4326")
+        centroids_gdf = osm_data_handler.convert_to_centroids(power_gdf)
+        assert len(centroids_gdf) == 2
+        assert all(isinstance(geom, Point) for geom in centroids_gdf.geometry)
 
 
 class TestDownloadMethod:
