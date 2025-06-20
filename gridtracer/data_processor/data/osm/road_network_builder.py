@@ -49,7 +49,7 @@ CREATE TABLE public_2po_4pgr (
     x1 double precision,
     y1 double precision,
     x2 double precision,
-    y2 double precision,
+    y2 double precision
 );
 SELECT AddGeometryColumn('public_2po_4pgr', 'geom_way', 4326, 'LINESTRING', 2);
 
@@ -248,6 +248,17 @@ class RoadNetworkBuilder(DataHandler):
                 continue  # Skip ways that didn't resolve
 
             processed_edge = row.to_dict()
+
+            # Handle osm_id, which might be a list after simplification
+            osm_id_val = processed_edge.get("osmid")
+            if isinstance(osm_id_val, list):
+                processed_edge['osm_id'] = osm_id_val[0]  # Take the first ID
+            elif osm_id_val is None:
+                # Fallback if osm_id is missing entirely
+                processed_edge['osm_id'] = way_id
+            else:
+                processed_edge['osm_id'] = osm_id_val
+
             processed_edge['clazz'] = clazz
             processed_edge['kmh'] = maxspeed
             processed_edge['flags_set'] = flags  # Store resolved flags
@@ -293,8 +304,6 @@ class RoadNetworkBuilder(DataHandler):
         logger.info(f"[{tile_identifier}] Processing complete. {len(edges)} edges remaining.")
 
         insert_value_tuples = []
-        if 'osm_id' not in edges.columns:
-            edges['osm_id'] = edges.index
 
         # Iterate again, this time on processed geodataframe
         for idx, row in edges.iterrows():
@@ -325,14 +334,13 @@ class RoadNetworkBuilder(DataHandler):
 
             # Assign the determined name to osm_name for the SQL query
             osm_name = final_name_for_sql
-
             osm_meta = "NULL"  # Placeholder
             osm_source_id = row.get("u", -1)
             osm_target_id = row.get("v", -1)
             clazz = row.get("clazz", 0)
             flags_int = self._flags_to_int(row.get("flags_set", set()))
-            source = osm_source_id
-            target = osm_target_id
+            source = row.get("source", -1)
+            target = row.get("target", -1)
             km = row.get("km", 0.0)
             kmh = row.get("kmh", 0)
             cost = row.get("cost", float('inf'))
@@ -351,7 +359,7 @@ class RoadNetworkBuilder(DataHandler):
                 continue
 
             # Shorter f-string parts for readability
-            part1 = f"({osm_id}, {osm_name}, {osm_meta}, "
+            part1 = f"({idx}, {osm_id}, {osm_name}, {osm_meta}, "
             part2 = f"{osm_source_id}, {osm_target_id}, {clazz}, {flags_int}, "
             part3 = f"{source}, {target}, {km:.7f}, {kmh}, {cost:.7f}, "
             part4 = f"{reverse_cost:.7f}, {x1:.7f}, {y1:.7f}, {x2:.7f}, {y2:.7f}, "
@@ -402,16 +410,6 @@ class RoadNetworkBuilder(DataHandler):
             G = osm.to_graph(nodes, edges_gdf, graph_type="networkx")
             G_simplified = ox.simplification.simplify_graph(G)
 
-            # G_proj = ox.projection.project_graph(G_simplified)
-            # # Now consolidate intersections with cleaned graph
-            # G_consolidated = ox.simplification.consolidate_intersections(
-            #     G_proj_clean,
-            #     rebuild_graph=True,
-            #     tolerance=15,   # meters
-            #     dead_ends=False
-            # )
-            # logger.info("Successfully consolidated intersections")
-
             # Convert back to GeoDataFrames
             nodes_gdf, edges_gdf = ox.graph_to_gdfs(G_simplified)
 
@@ -419,14 +417,22 @@ class RoadNetworkBuilder(DataHandler):
             nodes_gdf = nodes_gdf.to_crs("EPSG:4326")
             edges_gdf = edges_gdf.to_crs("EPSG:4326")
 
-            # # Simplify the graph to reduce the number of edges
-            # # Transform back geodataframe
-            # G2 = ox.simplification.simplify_graph(G)
-            # _, edges_gdf = ox.graph_to_gdfs(G2)
-
             edges_gdf = edges_gdf.reset_index()
 
             logger.info(f"Loaded {len(nodes)} nodes and {len(edges_gdf)} total edges.")
+
+            # Create source and target columns for postgis routing by mapping u,v to
+            # integers starting from 0,1,2,3, etc.
+
+            # Step 1: Extract unique node IDs from both u and v
+            unique_node_ids = pd.Series(pd.concat([edges_gdf['u'], edges_gdf['v']]).unique())
+
+            # Step 2: Create a mapping from OSM ID → internal integer ID
+            node_id_map = dict(zip(unique_node_ids, range(len(unique_node_ids))))
+
+            # Step 3: Apply the mapping to your edge table
+            edges_gdf['source'] = edges_gdf['u'].map(node_id_map)
+            edges_gdf['target'] = edges_gdf['v'].map(node_id_map)
 
             # Export road network to a single GeoJSON file
             geojson_path = self.dataset_output_dir / "road_network.geojson"
@@ -474,7 +480,7 @@ class RoadNetworkBuilder(DataHandler):
 
             full_sql_content.append(INDEX_SQL)
 
-            output_sql_file = self.dataset_output_dir / "new_routing_network.sql"
+            output_sql_file = self.dataset_output_dir / "ways_public_2po_4pgr.sql"
             try:
                 with open(output_sql_file, "w", encoding="utf-8") as f:
                     # Add some spacing between main SQL sections
