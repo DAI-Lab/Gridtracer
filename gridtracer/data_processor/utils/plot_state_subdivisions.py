@@ -120,4 +120,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    plot_subdivisions(Path(args.csv_path), show_labels=args.show_labels) 
+    plot_subdivisions(Path(args.csv_path), show_labels=args.show_labels)

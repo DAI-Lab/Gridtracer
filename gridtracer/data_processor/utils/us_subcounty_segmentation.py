@@ -2,6 +2,7 @@ import csv
 import logging
 import os
 import urllib.request
+from multiprocessing import Pool
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -9,7 +10,6 @@ import geopandas as gpd
 import pandas as pd
 from shapely.ops import unary_union
 from tqdm import tqdm
-from multiprocessing import Pool
 
 # --- Configuration ---
 NUM_PROCESSES = 5  # Number of states to process in parallel
@@ -131,7 +131,7 @@ def process_state(
     for county_fips, group in tqdm(
         state_df.groupby("county_fips"), desc=f"Counties in {state_abbr}"
     ):
-        county_name = group['county_name'].iloc[0]
+        group['county_name'].iloc[0]
         # This logging can be noisy in parallel, but useful for debugging.
         # logging.info(f"  Processing County: {county_name} (FIPS: {county_fips})")
 
@@ -180,7 +180,8 @@ def process_state(
             geom_wkb_hex = unified_geom.wkb_hex
 
             # Project to an equal-area projection for area calculation (EPSG:5070)
-            projected_geom = gpd.GeoSeries([unified_geom], crs=subdivision_geom_df.crs).to_crs("EPSG:5070")
+            projected_geom = gpd.GeoSeries(
+                [unified_geom], crs=subdivision_geom_df.crs).to_crs("EPSG:5070")
             area_sq_meters = projected_geom.area.iloc[0]
             area_sq_km = area_sq_meters / 1_000_000
 
@@ -259,7 +260,12 @@ def main():
     logging.info(f"Processing {len(tasks)} states using {NUM_PROCESSES} parallel workers.")
     with Pool(NUM_PROCESSES) as pool:
         results = list(
-            tqdm(pool.imap_unordered(worker, tasks), total=len(tasks), desc="Processing All States")
+            tqdm(
+                pool.imap_unordered(
+                    worker,
+                    tasks),
+                total=len(tasks),
+                desc="Processing All States")
         )
     logging.info("Parallel processing finished.")
 
@@ -302,4 +308,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
