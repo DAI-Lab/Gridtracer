@@ -92,7 +92,7 @@ class OSMDataHandler(DataHandler):
     def deduplicate_power_features(self, power_gdf, distance_threshold_meters=15):
         """
         Deduplicate power infrastructure features that are within a distance threshold.
-    
+
 
         Args:
             power_gdf (GeoDataFrame): GeoDataFrame containing power infrastructure features
@@ -185,7 +185,7 @@ class OSMDataHandler(DataHandler):
 
         # Get voltage values from the 'tags' column
         voltage_values = power_gdf['tags'].apply(get_voltage_from_tags)
-        
+
         # Keep features with no voltage info or voltage <= threshold
         # Using Series.isna() is a robust way to check for both None and NaN
         voltage_mask = voltage_values.isna() | (voltage_values <= max_voltage)

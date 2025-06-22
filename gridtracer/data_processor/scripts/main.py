@@ -14,7 +14,7 @@ from gridtracer.data_processor.data.nrel import NRELDataHandler
 from gridtracer.data_processor.data.osm.osm_data_handler import OSMDataHandler
 from gridtracer.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
 from gridtracer.data_processor.processing.building_processor import BuildingHeuristicsProcessor
-from gridtracer.data_processor.utils import logger
+from gridtracer.data_processor.utils.log_config import logger
 from gridtracer.data_processor.workflow import WorkflowOrchestrator
 
 
