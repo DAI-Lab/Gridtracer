@@ -1,6 +1,7 @@
+import argparse
 import csv
-import logging
 import os
+import sys
 import urllib.request
 from multiprocessing import Pool
 from pathlib import Path
@@ -11,13 +12,10 @@ import pandas as pd
 from shapely.ops import unary_union
 from tqdm import tqdm
 
+from gridtracer.data_processor.utils.log_config import logger
+
 # --- Configuration ---
 NUM_PROCESSES = 5  # Number of states to process in parallel
-
-# Set up basic logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
 
 
 def download_file(url: str, output_dir: Path) -> Path:
@@ -34,10 +32,10 @@ def download_file(url: str, output_dir: Path) -> Path:
     filename = os.path.basename(url)
     local_path = output_dir / filename
     if not local_path.exists():
-        logging.info(f"Downloading {url} to {local_path}")
+        logger.info(f"Downloading {url} to {local_path}")
         urllib.request.urlretrieve(url, local_path)
     else:
-        logging.info(f"File already exists: {local_path}")
+        logger.info(f"File already exists: {local_path}")
     return local_path
 
 
@@ -91,7 +89,7 @@ def download_and_read_shapefile(
         gdf = gpd.read_file(url)
         return gdf
     except Exception as e:
-        logging.error(f"Failed to download or read {url}: {e}")
+        logger.error(f"Failed to download or read {url}: {e}")
         return None
 
 
@@ -110,19 +108,20 @@ def process_state(
     """
     state_fips = state_df["state_fips"].iloc[0]
     state_abbr = state_df["state_abbr"].iloc[0]
-    logging.info(f"--- Processing State: {state_abbr} (FIPS: {state_fips}) ---")
+    logger.info(f"--- Processing State: {state_abbr} (FIPS: {state_fips}) ---")
 
     # 1. Download state-wide data ONCE
-    cousub_url = f"https://www2.census.gov/geo/tiger/TIGER2020/COUSUB/tl_2020_{state_fips}_cousub.zip"
+    base_url = "https://www2.census.gov/geo/tiger/TIGER2020"
+    cousub_url = f"{base_url}/COUSUB/tl_2020_{state_fips}_cousub.zip"
     all_cousubs_gdf = download_and_read_shapefile(cousub_url)
     if all_cousubs_gdf is None:
-        logging.warning(f"Could not load subdivisions for state {state_fips}, skipping.")
+        logger.warning(f"Could not load subdivisions for state {state_fips}, skipping.")
         return pd.DataFrame(), []
 
-    blocks_url = f"https://www2.census.gov/geo/tiger/TIGER2020/TABBLOCK20/tl_2020_{state_fips}_tabblock20.zip"
+    blocks_url = f"{base_url}/TABBLOCK20/tl_2020_{state_fips}_tabblock20.zip"
     all_blocks_gdf = download_and_read_shapefile(blocks_url)
     if all_blocks_gdf is None:
-        logging.warning(f"Could not load blocks for state {state_fips}, skipping.")
+        logger.warning(f"Could not load blocks for state {state_fips}, skipping.")
         return pd.DataFrame(), []
 
     results = []
@@ -133,7 +132,7 @@ def process_state(
     ):
         group['county_name'].iloc[0]
         # This logging can be noisy in parallel, but useful for debugging.
-        # logging.info(f"  Processing County: {county_name} (FIPS: {county_fips})")
+        # logger.info(f"  Processing County: {county_name} (FIPS: {county_fips})")
 
         # Filter state-wide data for the current county
         county_cousubs_gdf = all_cousubs_gdf[all_cousubs_gdf["COUNTYFP"] == county_fips]
@@ -142,7 +141,7 @@ def process_state(
         county_blocks_gdf = all_blocks_gdf[all_blocks_gdf[fips_col] == county_fips]
 
         if county_blocks_gdf.empty:
-            logging.warning(f"  No blocks found for county {county_fips}, skipping.")
+            logger.warning(f"  No blocks found for county {county_fips}, skipping.")
             continue
 
         # Process each subdivision in the county
@@ -153,8 +152,9 @@ def process_state(
             ]
 
             if subdivision_geom_df.empty:
-                logging.warning(
-                    f"    Subdivision {subdiv_fips} ({row['subdivision_name']}) not found in shapefile."
+                logger.warning(
+                    f"    Subdivision {subdiv_fips} ({row['subdivision_name']}) "
+                    "not found in shapefile."
                 )
                 not_found_subdivisions.append(
                     {
@@ -175,27 +175,28 @@ def process_state(
             fipscode = f"{row['state_fips']}{row['county_fips']}{row['subdivision_fips']}"
             population = clipped_blocks["POP20"].astype(int).sum()
 
-            # Unify geometry, project, and calculate area
+            # Unify geometry and project to EPSG:5070 for area calculation and output
             unified_geom = unary_union(subdivision_geom_df.geometry)
-            geom_wkb_hex = unified_geom.wkb_hex
+            projected_gds = gpd.GeoSeries(
+                [unified_geom], crs=subdivision_geom_df.crs
+            ).to_crs("EPSG:5070")
+            projected_geom = projected_gds.iloc[0]
 
-            # Project to an equal-area projection for area calculation (EPSG:5070)
-            projected_geom = gpd.GeoSeries(
-                [unified_geom], crs=subdivision_geom_df.crs).to_crs("EPSG:5070")
-            area_sq_meters = projected_geom.area.iloc[0]
-            area_sq_km = area_sq_meters / 1_000_000
+            # Calculate area and get WKB from the projected geometry
+            area_sq_km = projected_geom.area / 1_000_000
+            geom_wkb_hex = projected_geom.wkb_hex
 
             results.append(
                 {
                     **row.to_dict(),
-                    "FIPSCODE": fipscode,
-                    "POPULATION": population,
-                    "QKM": area_sq_km,
+                    "fipscode": fipscode,
+                    "population": population,
+                    "qkm": area_sq_km,
                     "geom": geom_wkb_hex,
                 }
             )
 
-    logging.info(f"--- Finished processing State: {state_abbr} ---")
+    logger.info(f"--- Finished processing State: {state_abbr} ---")
     return pd.DataFrame(results), not_found_subdivisions
 
 
@@ -214,10 +215,10 @@ def worker(args: Tuple[pd.DataFrame, Path, Path, str]):
         augmented_df, not_found_list = process_state(state_df, data_cache_dir)
         if not augmented_df.empty:
             augmented_df.to_csv(chunk_path, index=False)
-            logging.info(f"Saved chunk for state {state_abbr} to {chunk_path}")
+            logger.info(f"Saved chunk for state {state_abbr} to {chunk_path}")
         return not_found_list
     except Exception as e:
-        logging.error(f"Error processing state {state_abbr}: {e}", exc_info=True)
+        logger.error(f"Error processing state {state_abbr}: {e}", exc_info=True)
         return [{"state": state_abbr, "subdivision_fips": "ERROR", "subdivision_name": str(e)}]
 
 
@@ -225,6 +226,24 @@ def main():
     """
     Main function to run the data processing pipeline.
     """
+    parser = argparse.ArgumentParser(
+        description=(
+            "Process US Census county subdivision data to augment it with "
+            "population, area, and geometry."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--state",
+        type=str,
+        default=None,
+        help=(
+            "Abbreviation of a single state to process (e.g., MA, CA). "
+            "If not provided, all states are processed."
+        ),
+    )
+    args = parser.parse_args()
+
     output_directory = Path("./gridtracer/data_processor/output/")
     output_directory.mkdir(exist_ok=True)
 
@@ -241,6 +260,18 @@ def main():
     local_fips_file = download_file(lookup_url, output_directory)
     fips_df = read_fips_lookup_file(local_fips_file)
 
+    # Filter for a single state if provided
+    if args.state:
+        state_abbr_upper = args.state.upper()
+        if state_abbr_upper not in fips_df["state_abbr"].unique():
+            logger.error(
+                f"Invalid state abbreviation: '{args.state}'. "
+                f"Please use a valid 2-letter US state abbreviation."
+            )
+            sys.exit(1)
+        fips_df = fips_df[fips_df["state_abbr"] == state_abbr_upper].copy()
+        logger.info(f"Processing only specified state: {state_abbr_upper}")
+
     all_state_fips = sorted(fips_df["state_fips"].unique())
 
     # Prepare arguments for parallel processing
@@ -250,14 +281,14 @@ def main():
         chunk_path = chunks_directory / f"extended_{state_abbr}.csv"
 
         if chunk_path.exists():
-            logging.info(f"Chunk for state {state_abbr} already exists. Skipping.")
+            logger.info(f"Chunk for state {state_abbr} already exists. Skipping.")
             continue
 
         state_df = fips_df[fips_df["state_fips"] == state_fips].copy()
         tasks.append((state_df, data_cache_dir, chunk_path, state_abbr))
 
     # Run tasks in parallel
-    logging.info(f"Processing {len(tasks)} states using {NUM_PROCESSES} parallel workers.")
+    logger.info(f"Processing {len(tasks)} states using {NUM_PROCESSES} parallel workers.")
     with Pool(NUM_PROCESSES) as pool:
         results = list(
             tqdm(
@@ -267,31 +298,51 @@ def main():
                 total=len(tasks),
                 desc="Processing All States")
         )
-    logging.info("Parallel processing finished.")
+    logger.info("Parallel processing finished.")
 
     # Flatten the list of lists of not-found subdivisions
     all_not_found = [item for sublist in results if sublist for item in sublist]
 
-    # Combine all chunks into one file
-    logging.info("Combining all state chunks into a single file...")
-    all_chunks = []
-    for chunk_file in tqdm(
-        sorted(chunks_directory.glob("extended_*.csv")), desc="Combining Chunks"
-    ):
-        all_chunks.append(pd.read_csv(chunk_file))
+    # Combine chunks or handle single-state output
+    if args.state:
+        state_abbr_upper = args.state.upper()
+        chunk_file = chunks_directory / f"extended_{state_abbr_upper}.csv"
+        if chunk_file.exists():
+            final_output_path = (
+                output_directory / f"{state_abbr_upper}_cousub_extended.csv"
+            )
+            chunk_file.rename(final_output_path)
+            logger.info(
+                f"Processing complete. Final output saved to: {final_output_path}"
+            )
+        else:
+            logger.warning(
+                f"No output file was generated for state {state_abbr_upper}."
+            )
 
-    if all_chunks:
-        final_df = pd.concat(all_chunks, ignore_index=True)
-        output_csv_path = output_directory / "national_cousub_extended.csv"
-        final_df.to_csv(output_csv_path, index=False)
-        logging.info(f"Processing complete. Final output saved to: {output_csv_path}")
     else:
-        logging.warning("No chunks were generated. Final file not created.")
+        # Combine all chunks into one file
+        logger.info("Combining all state chunks into a single file...")
+        all_chunks = []
+        for chunk_file in tqdm(
+            sorted(chunks_directory.glob("extended_*.csv")), desc="Combining Chunks"
+        ):
+            all_chunks.append(pd.read_csv(chunk_file))
+
+        if all_chunks:
+            final_df = pd.concat(all_chunks, ignore_index=True)
+            output_csv_path = output_directory / "national_cousub_extended.csv"
+            final_df.to_csv(output_csv_path, index=False)
+            logger.info(
+                f"Processing complete. Final output saved to: {output_csv_path}"
+            )
+        else:
+            logger.warning("No chunks were generated. Final file not created.")
 
     # Write the log of not-found subdivisions
     if all_not_found:
         total_not_found = len(all_not_found)
-        logging.info(f"Found {total_not_found} subdivisions that were not in the shapefiles.")
+        logger.info(f"Found {total_not_found} subdivisions that were not in the shapefiles.")
         not_found_df = pd.DataFrame(all_not_found)
         # Reorder columns for clarity
         not_found_df = not_found_df[['state', 'subdivision_fips', 'subdivision_name']]
@@ -301,10 +352,10 @@ def main():
             f.write(f"Total Subdivisions Not Found: {total_not_found}\n\n")
             f.write(not_found_df.to_string(index=False))
 
-        logging.info(f"Log of not-found subdivisions saved to: {log_path}")
+        logger.info(f"Log of not-found subdivisions saved to: {log_path}")
         print(f"\nTotal number of subdivisions not found: {total_not_found}")
     else:
-        logging.info("All subdivisions were found successfully.")
+        logger.info("All subdivisions were found successfully.")
 
 
 if __name__ == "__main__":
