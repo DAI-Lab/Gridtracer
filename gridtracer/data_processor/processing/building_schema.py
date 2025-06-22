@@ -15,9 +15,9 @@ class ResidentialBuildingOutput:
     """
 
     # Required fields (no default values) must come first - using original column names
-    id: str  # Unique identifier
-    floor_area: float  # Total floor area in m²
-    building_use: str  # Primary use - should be 'residential'
+    osm_id: str  # Unique identifier
+    area: float  # Total floor area in m²
+    use: str  # Primary use - should be 'residential'
     free_walls: int  # Number of free walls
     building_type: str  # Building typology (SFH, TH, MFH, AB)
     occupants: int  # Number of occupants
@@ -74,11 +74,9 @@ class ResidentialBuildingOutput:
 
         # Add missing optional columns with None values
         for field in schema_fields:
-            if field not in output_buildings.columns and field != 'geometry':
+            if field not in output_buildings.columns and (
+                    field != 'geometry' or field != 'osm_id'):
                 output_buildings[field] = None
-
-        # Reorder columns according to schema field order
-        output_buildings = output_buildings[schema_fields]
 
         return output_buildings
 
@@ -94,9 +92,9 @@ class NonResidentialBuildingOutput:
     """
 
     # Required fields (no default values) must come first - using original column names
-    id: str  # Unique identifier
-    floor_area: float  # Total floor area in m²
-    building_use: str  # Primary use (commercial, industrial, public)
+    osm_id: str  # Unique identifier
+    area: float  # Total floor area in m²
+    use: str  # Primary use (commercial, industrial, public)
     free_walls: int  # Number of free walls
     geometry: object  # Building footprint geometry
 
@@ -145,10 +143,8 @@ class NonResidentialBuildingOutput:
 
         # Add missing optional columns with None values
         for field in schema_fields:
-            if field not in output_buildings.columns and field != 'geometry':
+            if field not in output_buildings.columns and (
+                    field != 'geometry' or field != 'osm_id'):
                 output_buildings[field] = None
-
-        # Reorder columns according to schema field order
-        output_buildings = output_buildings[schema_fields]
 
         return output_buildings

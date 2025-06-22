@@ -7,7 +7,7 @@ import pandas as pd
 
 from gridtracer.data_processor.processing.building_schema import (
     NonResidentialBuildingOutput, ResidentialBuildingOutput,)
-from gridtracer.data_processor.utils import logger
+from gridtracer.data_processor.utils.log_config import logger
 
 
 class BuildingHeuristicsProcessor:
@@ -121,12 +121,20 @@ class BuildingHeuristicsProcessor:
             residential.to_file(self.dataset_output_dir
                                 / "07_FINAL_residential_buildings_with_construction_year.geojson")
 
+            residential = residential.rename(
+                columns={
+                    'id': 'osm_id',
+                    'floor_area': 'area',
+                    'building_use': 'use'})
+
+            residential['use'] = residential['use'].str.capitalize()
+
             if len(residential) > 0:
                 # Write residential output
                 residential_output_path = self.write_buildings_output(
                     residential,
                     self.dataset_output_dir,
-                    'residential_buildings.shp',
+                    'res_buildings.shp',
                     'residential'
                 )
                 logger.info(f"Residential buildings saved to: {residential_output_path}")
@@ -135,13 +143,18 @@ class BuildingHeuristicsProcessor:
 
         if len(other) > 0:
             logger.info(f"Processing {len(other)} non-residential buildings")
-
+            other = other.rename(
+                columns={
+                    'id': 'osm_id',
+                    'floor_area': 'area',
+                    'building_use': 'use'})
+            other['use'] = other['use'].str.capitalize()
             if len(other) > 0:
                 # Write non-residential output
                 other_output_path = self.write_buildings_output(
                     other,
                     self.dataset_output_dir,
-                    'non_residential_buildings.shp',
+                    'oth_buildings.shp',
                     'non_residential'
                 )
                 logger.info(f"Non-residential buildings saved to: {other_output_path}")
@@ -2052,7 +2065,7 @@ class BuildingHeuristicsProcessor:
 
     def _calculate_floor_area(self, buildings):
         """
-        Add floor_area column in square meters and ensure data is in EPSG:4326
+        Add floor_area column in square meters and ensure data is in EPSG:5070
 
         Parameters:
         -----------
@@ -2061,7 +2074,7 @@ class BuildingHeuristicsProcessor:
 
         Returns:
         --------
-        GeoDataFrame : Buildings with floor_area column added, in EPSG:4326
+        GeoDataFrame : Buildings with floor_area column added, in EPSG:5070
         """
         # First ensure data is in EPSG:5070 (US metric)
         if buildings.crs != "EPSG:5070":
