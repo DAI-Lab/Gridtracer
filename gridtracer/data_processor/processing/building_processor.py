@@ -134,7 +134,7 @@ class BuildingHeuristicsProcessor:
                 residential_output_path = self.write_buildings_output(
                     residential,
                     self.dataset_output_dir,
-                    'res_buildings.shp',
+                    'Res_buildings.shp',
                     'residential'
                 )
                 logger.info(f"Residential buildings saved to: {residential_output_path}")
@@ -154,7 +154,7 @@ class BuildingHeuristicsProcessor:
                 other_output_path = self.write_buildings_output(
                     other,
                     self.dataset_output_dir,
-                    'oth_buildings.shp',
+                    'Oth_buildings.shp',
                     'non_residential'
                 )
                 logger.info(f"Non-residential buildings saved to: {other_output_path}")
@@ -852,22 +852,6 @@ class BuildingHeuristicsProcessor:
         # Step 4: Initial classification based on cluster characteristics
         logger.info("Step 4: Classifying building types based on cluster characteristics")
         classified_buildings = self._assign_building_types(classified_buildings)
-
-        # Step 5: Statistical adjustment to match regional distribution
-        # TODO: Implement statistical adjustment based on housing_data
-        # This would involve:
-        # 1. Calculate current distribution of building types
-        # 2. Compare with target distribution from housing_data
-        # 3. Reclassify borderline cases to match target percentages
-        #
-        # Example from legacy code:
-        # res_types = classified_buildings.groupby('building_type').size()
-        # res_types_percent = (res_types / res_types.sum() * 100).round()
-        #
-        # # Compare with target distribution
-        # if housing_data:
-        #     target_dist = housing_data.get('building_type_distribution', {})
-        #     # Adjust classifications to match target...
 
         # Log final distribution
         type_counts = classified_buildings['building_type'].value_counts()
