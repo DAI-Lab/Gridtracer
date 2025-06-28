@@ -15,7 +15,8 @@ import yaml
 from shapely.wkb import dumps as wkb_dumps
 from tqdm import tqdm
 
-from gridtracer.data_processor.data.base import DataHandler
+from gridtracer.data_processor.data_imports.base import DataHandler
+from gridtracer.data_processor.utils.log_config import logger
 
 if TYPE_CHECKING:
     from gridtracer.data_processor.workflow import WorkflowOrchestrator
