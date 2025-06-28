@@ -172,7 +172,8 @@ def test_build_network(road_network_builder, mock_osm_data):
         road_network_builder.orchestrator.get_osm_parser.assert_called_once()
         # Verify the mock OSM parser's get_network was called
         mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
-        mock_osm_parser_instance.get_network.assert_called_once_with(nodes=True, network_type='driving')
+        mock_osm_parser_instance.get_network.assert_called_once_with(
+            nodes=True, network_type='driving')
 
         # Check results - nodes might not be explicitly returned by build_network
         # Depending on the RoadNetworkBuilder.build_network implementation,
@@ -215,7 +216,8 @@ def test_process_method(road_network_builder, mock_osm_data):
         road_network_builder.orchestrator.get_osm_parser.assert_called_once()
         mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
         # The process method calls build_network, which calls get_network
-        mock_osm_parser_instance.get_network.assert_called_once_with(nodes=True, network_type='driving')
+        mock_osm_parser_instance.get_network.assert_called_once_with(
+            nodes=True, network_type='driving')
 
         # Verify results
         # assert results['nodes'] is not None # Check if 'nodes' is expected
