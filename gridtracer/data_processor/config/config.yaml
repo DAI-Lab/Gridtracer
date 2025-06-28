@@ -15,7 +15,6 @@ region:
 output_dir: "gridtracer/data_processor/output/"  
   
 input_data:
-  
   # OSM PBF file path
   # Download from https://download.geofabrik.de/ or similar source
   osm_pbf_file: "/Users/magic-rabbit/Documents/MA-data/geofabrik_massachusetts_latest_osm.pbf"
@@ -23,7 +22,3 @@ input_data:
   # NREL data paths
   nrel_data: "/Users/magic-rabbit/Documents/MA-data/NREL_Residential_typology.tsv"
 
-# Processing parameters
-processing:
-  distance_threshold_meters: 10  # Distance threshold for deduplication
-  crs: "epsg:4326"  # Coordinate reference system
