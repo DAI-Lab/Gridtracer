@@ -12,7 +12,7 @@ region:
   lookup_url: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
 
 # Base output directory
-output_dir: "gridtracer/data_processor/output/"  
+output_dir: "gridtracer/output/"  
   
 input_data:
   # OSM PBF file path

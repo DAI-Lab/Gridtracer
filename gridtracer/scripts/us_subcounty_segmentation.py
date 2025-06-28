@@ -244,7 +244,7 @@ def main():
     )
     args = parser.parse_args()
 
-    output_directory = Path("./gridtracer/data_processor/output/")
+    output_directory = Path("./gridtracer/output/US_REGION_SEGMENTATION/")
     output_directory.mkdir(exist_ok=True)
 
     chunks_directory = output_directory / "fips_code_chunks"

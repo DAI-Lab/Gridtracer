@@ -83,7 +83,7 @@ class ConfigLoader:
         Returns:
             str: Output directory path
         """
-        return Path(self.config.get('output_dir', 'gridtracer/data_processor/output/'))
+        return Path(self.config.get('output_dir', 'gridtracer/output/'))
 
     def get_output_path(self, filename=None):
         """

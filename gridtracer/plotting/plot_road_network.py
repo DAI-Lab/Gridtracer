@@ -24,7 +24,7 @@ def visualize_road_network(network_data, boundary_gdf=None,
 
     # Set up output directory
     if output_dir is None:
-        output_dir = Path("gridtracer/data_processor/output/plots")
+        output_dir = Path("gridtracer/output/plots")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 

@@ -20,7 +20,7 @@ directory after running other processing steps.
 
 Example Command:
     python -m gridtracer.analysis.tract_analysis \\
-        gridtracer/data_processor/output/MA/Middlesex_County/Cambridge_city/CENSUS/target_region_blocks.geojson \\
+        gridtracer/output/MA/Middlesex_County/Cambridge_city/CENSUS/target_region_blocks.geojson \\
         354200 \\
         --output-html tract_354200_interactive.html \\
         --output-png tract_354200_static.png
