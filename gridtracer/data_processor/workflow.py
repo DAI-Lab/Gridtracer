@@ -11,7 +11,7 @@ import pandas as pd
 from pyrosm import OSM
 from shapely.geometry import MultiPolygon, Polygon
 
-from gridtracer.data_processor.config import ConfigLoader
+from gridtracer.config import ConfigLoader
 
 # Define all known dataset names for directory creation
 ALL_DATASETS: List[str] = [

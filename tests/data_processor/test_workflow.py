@@ -19,7 +19,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from gridtracer.data_processor.config import ConfigLoader
+from gridtracer.config import ConfigLoader
 from gridtracer.data_processor.workflow import ALL_DATASETS, WorkflowOrchestrator
 
 
