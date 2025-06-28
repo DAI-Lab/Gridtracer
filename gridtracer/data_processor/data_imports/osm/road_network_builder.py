@@ -91,7 +91,7 @@ class RoadNetworkBuilder(DataHandler):
         super().__init__(orchestrator)
         # Store orchestrator if needed, or ensure DataHandler does
         self.orchestrator = orchestrator
-        self.config_file = config_file or 'gridtracer/data_processor/data/osm/osm2po_config.yaml'
+        self.config_file = config_file or 'gridtracer/data_processor/data_imports/osm/osm2po_config.yaml'
         self.config = self._load_config()
 
     def _get_dataset_name(self):

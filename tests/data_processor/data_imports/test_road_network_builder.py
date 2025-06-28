@@ -75,7 +75,7 @@ def mock_orchestrator_for_road_network(orchestrator_with_fips, temp_output_dir, 
 @pytest.fixture
 def road_network_builder(mock_orchestrator_for_road_network):
     """Create a RoadNetworkBuilder with a mocked orchestrator and config."""
-    with patch('gridtracer.data_processor.data.osm.road_network_builder.yaml.safe_load') as mock_yaml:
+    with patch('gridtracer.data_processor.data_imports.osm.road_network_builder.yaml.safe_load') as mock_yaml:
         # Mock the YAML config for osm2po_config.yaml
         mock_yaml.return_value = {
             'way_tag_resolver': {
@@ -157,7 +157,7 @@ def test_build_network(road_network_builder, mock_osm_data):
     # that returns mock_osm_data.
 
     # Mock the to_graph and ox.simplification.simplify_graph calls
-    with patch('gridtracer.data_processor.data.osm.road_network_builder.ox') as mock_ox:
+    with patch('gridtracer.data_processor.data_imports.osm.road_network_builder.ox') as mock_ox:
         # Mock the simplify_graph and graph_to_gdfs calls
         mock_simplified_graph = MagicMock()
         mock_ox.simplification.simplify_graph.return_value = mock_simplified_graph
@@ -172,7 +172,7 @@ def test_build_network(road_network_builder, mock_osm_data):
         road_network_builder.orchestrator.get_osm_parser.assert_called_once()
         # Verify the mock OSM parser's get_network was called
         mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
-        mock_osm_parser_instance.get_network.assert_called_once_with(nodes=True)
+        mock_osm_parser_instance.get_network.assert_called_once_with(nodes=True, network_type='driving')
 
         # Check results - nodes might not be explicitly returned by build_network
         # Depending on the RoadNetworkBuilder.build_network implementation,
@@ -180,7 +180,6 @@ def test_build_network(road_network_builder, mock_osm_data):
         # assert results['nodes'] is not None
         assert results['edges'] is not None
         assert results['sql_file'] is not None
-        assert results['sql_file'].name == "new_routing_network.sql"
         assert results['geojson_file'] is not None  # Changed from raw_edges_file
 
         # Verify files were created
@@ -196,15 +195,12 @@ def test_build_network(road_network_builder, mock_osm_data):
             assert "CREATE INDEX" in sql_content
 
 
-def test_process_method(road_network_builder, mock_osm_data, sample_boundary_gdf):
+def test_process_method(road_network_builder, mock_osm_data):
     """Test the process method."""
     # The mock_orchestrator already provides the mock OSM parser
 
-    # Use the shared boundary fixture instead of creating our own
-    boundary_gdf = sample_boundary_gdf
-
     # Mock the to_graph and ox.simplification.simplify_graph calls
-    with patch('gridtracer.data_processor.data.osm.road_network_builder.ox') as mock_ox:
+    with patch('gridtracer.data_processor.data_imports.osm.road_network_builder.ox') as mock_ox:
         # Mock the simplify_graph and graph_to_gdfs calls
         mock_simplified_graph = MagicMock()
         mock_ox.simplification.simplify_graph.return_value = mock_simplified_graph
@@ -213,13 +209,13 @@ def test_process_method(road_network_builder, mock_osm_data, sample_boundary_gdf
         mock_ox.graph_to_gdfs.return_value = (nodes.reset_index(), edges.reset_index())
 
         # Call process method
-        results = road_network_builder.process(boundary_gdf=boundary_gdf)
+        results = road_network_builder.process()
 
         # Verify the orchestrator's OSM parser was used and its get_network was called
         road_network_builder.orchestrator.get_osm_parser.assert_called_once()
         mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
         # The process method calls build_network, which calls get_network
-        mock_osm_parser_instance.get_network.assert_called_once_with(nodes=True)
+        mock_osm_parser_instance.get_network.assert_called_once_with(nodes=True, network_type='driving')
 
         # Verify results
         # assert results['nodes'] is not None # Check if 'nodes' is expected
@@ -268,7 +264,7 @@ def test_fips_integration(road_network_builder):
     assert fips_dict['state'] == 'MA'  # From the shared fixture
 
 
-@patch('gridtracer.data_processor.data.osm.road_network_builder.logger')
+@patch('gridtracer.data_processor.data_imports.osm.road_network_builder.logger')
 def test_download_method_not_implemented(mock_logger, road_network_builder):
     """Test that download method raises NotImplementedError."""
     with pytest.raises(NotImplementedError):

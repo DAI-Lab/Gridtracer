@@ -11,6 +11,12 @@ import pytest
 from gridtracer.data_processor.data_imports.nrel import EXPECTED_VINTAGE_BINS, NRELDataHandler
 
 
+def create_mock_fips_file(filepath: Path, content: str) -> None:
+    """Helper function to create mock FIPS file."""
+    with open(filepath, 'w', encoding='latin-1') as f:
+        f.write(content)
+
+
 class TestNRELDataHandler:
     """Test cases for NRELDataHandler class."""
 
@@ -65,7 +71,6 @@ class TestNRELDataHandler:
 
             with patch('urllib.request.urlretrieve') as mock_urlretrieve:
                 # Create the FIPS file manually
-                from tests.data_processor.conftest import create_mock_fips_file
                 mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
                     Path(filepath), sample_fips_csv_content
                 )
