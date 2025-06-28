@@ -6,12 +6,9 @@ data to create a PostgreSQL/PostGIS compatible SQL file for pgRouting.
 """
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
-import contextily as ctx
 import geopandas as gpd
-import matplotlib.pyplot as plt
 import osmnx as ox
 import pandas as pd
 import yaml
@@ -369,30 +366,21 @@ class RoadNetworkBuilder(DataHandler):
 
         return insert_value_tuples
 
-    def build_network(
-        self,
-        boundary_gdf: Optional[gpd.GeoDataFrame] = None,
-        plot: bool = False
-    ) -> Dict[str, Any]:
+    def build_network(self) -> Dict[str, Any]:
         """
         Build a routable road network from OSM data.
-
-        Args:
-            boundary_gdf: GeoDataFrame containing the boundary polygon for clipping.
 
         Returns:
             Dictionary containing results of the network building process:
                 - edges: GeoDataFrame of edges
                 - sql_file: Path to the generated SQL file
                 - geojson_file: Path to the network GeoJSON file
-                - visualization_file: Path to the network visualization
         """
         results = {
             'nodes': None,
             'edges': None,
             'sql_file': None,
             'geojson_file': None,
-            'visualization_file': None
         }
 
         osm = self.orchestrator.get_osm_parser()
@@ -493,26 +481,6 @@ class RoadNetworkBuilder(DataHandler):
             # Store the edges in results
             results['edges'] = edges_gdf
 
-            # Create a simple visualization of the road network using the exported GeoJSON
-            if plot:
-                try:
-                    plot_output_dir = self.orchestrator.get_dataset_specific_output_directory(
-                        "PLOTS")
-                    viz_file = self.visualize_road_network(
-                        network_data=geojson_path,
-                        boundary_gdf=boundary_gdf,
-                        output_dir=plot_output_dir,
-                        title="Road Network"
-                    )
-
-                    if viz_file:
-                        logger.info(f"Road network visualization created: {viz_file}")
-                        results['visualization_file'] = viz_file
-                except Exception as e:
-                    logger.error(f"Error creating road network visualization: {e}")
-
-                logger.info(f"Processing finished. Output generated in: {self.dataset_output_dir}")
-
         except Exception as e:
             logger.error(f"Error building road network: {e}")
 
@@ -525,107 +493,20 @@ class RoadNetworkBuilder(DataHandler):
         """
         raise NotImplementedError("Data downloading not implemented for this class")
 
-    def process(self, boundary_gdf=None, plot=False):
+    def process(self):
         """
         Process the data for the region.
 
         This method implements the complete data processing workflow
         for the road network, essentially a wrapper around build_network.
 
-        Args:
-            boundary_gdf (GeoDataFrame, optional): Boundary to use for clipping
-                If provided, the network will be clipped to this boundary
-
         Returns:
             dict: Dictionary containing processed data and file paths:
                 - edges: GeoDataFrame of network edges
                 - sql_file: Path to the generated SQL file
                 - geojson_file: Path to the network GeoJSON file
-                - visualization_file: Path to the network visualization
         """
 
-        # Build the network with boundary clipping during initial loading
-        results = self.build_network(
-            boundary_gdf=boundary_gdf,
-            plot=plot
-        )
+        results = self.build_network()
 
         return results
-
-    def visualize_road_network(self, network_data, boundary_gdf=None,
-                               output_dir=None, title="Road Network"):
-        """
-        Simple visualization of a road network.
-
-        Args:
-            network_data: Either a GeoDataFrame of roads or a path to a GeoJSON file
-            boundary_gdf: Optional boundary GeoDataFrame for overlay
-            output_dir: Directory to save the output plot, defaults to current directory
-            title: Title for the plot
-
-        Returns:
-            str: Path to the saved plot file
-        """
-
-        # Set up output directory
-        if output_dir is None:
-            output_dir = Path("gridtracer/data_processor/output/plots")
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Load network data if it's a file path
-        if isinstance(network_data, (str, Path)):
-            logger.info(f"Loading network from: {network_data}")
-            network_gdf = gpd.read_file(network_data)
-        else:
-            network_gdf = network_data
-
-        if network_gdf is None or network_gdf.empty:
-            logger.error("No network data to visualize")
-            return None
-
-        # Create figure and axis
-        fig, ax = plt.subplots(figsize=(12, 12))
-
-        # Convert to Web Mercator for basemap compatibility
-        network_mercator = network_gdf.to_crs(epsg=3857)
-
-        # Plot network
-        network_mercator.plot(ax=ax, color='blue', linewidth=0.8)
-
-        # Add boundary if provided
-        if boundary_gdf is not None and not boundary_gdf.empty:
-            boundary_mercator = boundary_gdf.to_crs(epsg=3857)
-            boundary_mercator.plot(
-                ax=ax,
-                facecolor='none',
-                edgecolor='green',
-                linewidth=2.0,
-                linestyle='--'
-            )
-
-        # Get bounds for the map
-        list(network_mercator.total_bounds)
-
-        # Add basemap
-        try:
-            ctx.add_basemap(
-                ax,
-                source=ctx.providers.CartoDB.Positron,
-                zoom='auto',
-                crs="EPSG:3857"
-            )
-        except Exception as e:
-            logger.warning(f"Could not add basemap: {e}")
-
-        # Set title and remove axes
-        plt.title(title, fontsize=16)
-        ax.set_axis_off()
-
-        # Save the plot
-        output_file = output_dir / "road_network.png"
-        plt.savefig(output_file, dpi=300, bbox_inches='tight')
-        plt.close()
-
-        logger.info(f"Road network visualization saved to: {output_file}")
-        return str(output_file)
