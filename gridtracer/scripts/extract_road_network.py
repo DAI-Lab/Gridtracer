@@ -6,18 +6,18 @@ and then uses the RoadNetworkBuilder to generate the road network for the
 configured region.
 
 Usage:
-    python -m gridtracer.data_processor.scripts.extract_road_network --plot
+    python -m gridtracer.scripts.extract_road_network --plot
 """
 import argparse
 import time
 
-import geopandas as gpd
-
-from gridtracer.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
+from gridtracer.data_processor.data_imports.osm.road_network_builder import (
+    RoadNetworkBuilder,
+)
 from gridtracer.data_processor.utils.log_config import logger
 from gridtracer.data_processor.workflow import WorkflowOrchestrator
+import geopandas as gpd
 from gridtracer.plotting.plot_road_network import visualize_road_network
-
 
 def set_boundary_gdf(file_path: str):
     """
@@ -25,7 +25,6 @@ def set_boundary_gdf(file_path: str):
     """
     boundary_gdf = gpd.read_file(file_path)
     return boundary_gdf
-
 
 def extract_road_network(boundary_file_path: str = None, plot: bool = False):
     """
@@ -90,4 +89,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main() 
