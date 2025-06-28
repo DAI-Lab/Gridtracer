@@ -10,14 +10,10 @@ from gridtracer.data_processor.processing.building_schema import (
 from gridtracer.data_processor.utils.log_config import logger
 
 
-class BuildingHeuristicsProcessor:
+class BuildingProcessor:
     """
     Processes building footprints to create detailed building attributes
     for energy demand modeling and grid infrastructure planning.
-
-    This class implements the building classification pipeline described in
-    the building_heuristics.md document. It applies a series of heuristics
-    to determine building characteristics when direct data is unavailable.
     """
 
     def __init__(self, output_dir: str):

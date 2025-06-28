@@ -4,13 +4,13 @@ import pandas as pd
 import pytest
 from shapely.geometry import Polygon
 
-from gridtracer.data_processor.processing.building_processor import BuildingHeuristicsProcessor
+from gridtracer.data_processor.processing.building_processor import BuildingProcessor
 
 
 @pytest.fixture
-def building_processor() -> BuildingHeuristicsProcessor:
-    """Fixture to create a BuildingHeuristicsProcessor instance."""
-    return BuildingHeuristicsProcessor(output_dir="test_output")
+def building_processor() -> BuildingProcessor:
+    """Fixture to create a BuildingProcessor instance."""
+    return BuildingProcessor(output_dir="test_output")
 
 
 @pytest.fixture
@@ -124,7 +124,7 @@ class TestBuildingClassification:
 
     def test_classify_isolated_buildings_as_sfh(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_isolated_buildings: gpd.GeoDataFrame
     ) -> None:
         """Test that small isolated buildings are classified as SFH."""
@@ -144,7 +144,7 @@ class TestBuildingClassification:
 
     def test_classify_terraced_house_cluster(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_terraced_house_cluster: gpd.GeoDataFrame
     ) -> None:
         """Test that linear arrangements of similar buildings are classified as TH."""
@@ -169,7 +169,7 @@ class TestBuildingClassification:
 
     def test_classify_apartment_cluster(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_apartment_cluster: gpd.GeoDataFrame
     ) -> None:
         """Test that large connected clusters are classified as AB."""
@@ -186,7 +186,7 @@ class TestBuildingClassification:
 
     def test_classify_mixed_neighborhood(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_mixed_neighborhood: gpd.GeoDataFrame
     ) -> None:
         """Test classification of a mixed neighborhood with all building types."""
@@ -221,7 +221,7 @@ class TestBuildingClassification:
 
     def test_empty_buildings_input(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test handling of empty buildings input."""
         empty_buildings = gpd.GeoDataFrame({'geometry': []}, crs="EPSG:5070")
@@ -232,7 +232,7 @@ class TestBuildingClassification:
 
     def test_missing_floor_area_column(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test that missing floor_area column raises an error."""
         buildings_data = {
@@ -246,7 +246,7 @@ class TestBuildingClassification:
 
     def test_neighbor_detection_accuracy(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test that neighbor detection correctly identifies touching buildings."""
         # Create buildings where some touch and some don't
@@ -279,7 +279,7 @@ class TestBuildingClassification:
 
     def test_cluster_expansion(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test that cluster expansion finds all connected buildings."""
         # Create a chain of connected buildings
@@ -310,7 +310,7 @@ class TestBuildingClassification:
 
 
 def test_building_id_assignment_fully_contained(
-    building_processor: BuildingHeuristicsProcessor,
+    building_processor: BuildingProcessor,
     sample_census_blocks: gpd.GeoDataFrame
 ) -> None:
     """Test building ID assignment for a building fully contained within one block."""
@@ -334,7 +334,7 @@ def test_building_id_assignment_fully_contained(
 
 
 def test_building_id_assignment_85_percent_overlap(
-    building_processor: BuildingHeuristicsProcessor,
+    building_processor: BuildingProcessor,
     sample_census_blocks: gpd.GeoDataFrame
 ) -> None:
     """Test building ID assignment for a building with 85% overlap in one block."""
@@ -361,7 +361,7 @@ def test_building_id_assignment_85_percent_overlap(
 
 
 def test_building_id_assignment_50_50_split_assigned(
-    building_processor: BuildingHeuristicsProcessor,
+    building_processor: BuildingProcessor,
     sample_census_blocks: gpd.GeoDataFrame
 ) -> None:
     """Test building ID assignment for a building with 50/50 split - centroid on boundary."""
@@ -383,7 +383,7 @@ def test_building_id_assignment_50_50_split_assigned(
 
 
 def test_building_id_assignment_multiple_buildings_same_block(
-    building_processor: BuildingHeuristicsProcessor,
+    building_processor: BuildingProcessor,
     sample_census_blocks: gpd.GeoDataFrame
 ) -> None:
     """Test sequential ID assignment for multiple buildings in the same block."""
@@ -429,7 +429,7 @@ def test_building_id_assignment_multiple_buildings_same_block(
 
 
 def test_building_id_assignment_mixed_scenarios(
-    building_processor: BuildingHeuristicsProcessor,
+    building_processor: BuildingProcessor,
     sample_census_blocks: gpd.GeoDataFrame
 ) -> None:
     """Test building ID assignment with mixed scenarios - some assigned, some unassigned."""
@@ -468,7 +468,7 @@ def test_building_id_assignment_mixed_scenarios(
 
 
 def test_building_id_assignment_empty_input(
-    building_processor: BuildingHeuristicsProcessor,
+    building_processor: BuildingProcessor,
     sample_census_blocks: gpd.GeoDataFrame
 ) -> None:
     """Test building ID assignment with empty buildings input."""
@@ -483,7 +483,7 @@ def test_building_id_assignment_empty_input(
 
 
 def test_building_id_assignment_no_census_blocks(
-    building_processor: BuildingHeuristicsProcessor
+    building_processor: BuildingProcessor
 ) -> None:
     """Test building ID assignment with no census blocks."""
     building_data = {
@@ -501,7 +501,7 @@ def test_building_id_assignment_no_census_blocks(
     assert result['census_block_id'].isna().all()
 
 
-def test_calculate_floor_area_wgs84(building_processor: BuildingHeuristicsProcessor) -> None:
+def test_calculate_floor_area_wgs84(building_processor: BuildingProcessor) -> None:
     """Test _calculate_floor_area with WGS84 input."""
     # Create a sample GeoDataFrame in WGS84 (EPSG:4326)
     # A square of approx 100m x 100m near the equator for simplicity
@@ -524,7 +524,7 @@ def test_calculate_floor_area_wgs84(building_processor: BuildingHeuristicsProces
     assert 'floor_area' in gdf.columns  # _calculate_floor_area modifies in place
 
 
-def test_calculate_floor_area_epsg5070(building_processor: BuildingHeuristicsProcessor) -> None:
+def test_calculate_floor_area_epsg5070(building_processor: BuildingProcessor) -> None:
     """Test _calculate_floor_area with EPSG:5070 input."""
     # Create a sample GeoDataFrame in EPSG:5070 (a metric CRS)
     # A 100m x 100m square
@@ -548,7 +548,7 @@ def test_calculate_floor_area_epsg5070(building_processor: BuildingHeuristicsPro
     assert 'floor_area' in gdf.columns  # _calculate_floor_area modifies in place
 
 
-def test_calculate_floor_area_empty_input(building_processor: BuildingHeuristicsProcessor) -> None:
+def test_calculate_floor_area_empty_input(building_processor: BuildingProcessor) -> None:
     """Test _calculate_floor_area with an empty GeoDataFrame."""
     empty_gdf = gpd.GeoDataFrame({'geometry': []}, crs="EPSG:4326")
     processed_gdf = building_processor._calculate_floor_area(empty_gdf)
@@ -561,7 +561,7 @@ class TestFreeWallsCalculation:
 
     def test_calculate_free_walls_isolated_buildings(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_isolated_buildings: gpd.GeoDataFrame
     ) -> None:
         """Test free walls calculation for isolated buildings."""
@@ -575,7 +575,7 @@ class TestFreeWallsCalculation:
 
     def test_calculate_free_walls_terraced_house_row(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_terraced_house_cluster: gpd.GeoDataFrame
     ) -> None:
         """Test free walls calculation for a row of terraced_houses."""
@@ -599,7 +599,7 @@ class TestFreeWallsCalculation:
 
     def test_calculate_free_walls_complex_cluster(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_apartment_cluster: gpd.GeoDataFrame
     ) -> None:
         """Test free walls calculation for a complex building cluster."""
@@ -618,7 +618,7 @@ class TestFreeWallsCalculation:
 
     def test_calculate_free_walls_empty_input(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test free walls calculation with empty input."""
         empty_buildings = gpd.GeoDataFrame({'geometry': []}, crs="EPSG:5070")
@@ -633,7 +633,7 @@ class TestFloorsCalculation:
 
     def test_calculate_floors_with_microsoft_data(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test floors calculation using Microsoft Buildings data."""
         # Create sample buildings
@@ -677,7 +677,7 @@ class TestFloorsCalculation:
 
     def test_calculate_floors_without_microsoft_data(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test floors calculation when no Microsoft Buildings data is available."""
         buildings_data = {
@@ -711,7 +711,7 @@ class TestFloorsCalculation:
 
     def test_calculate_floors_empty_input(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test floors calculation with empty input."""
         empty_buildings = gpd.GeoDataFrame({'geometry': []}, crs="EPSG:5070")
@@ -759,7 +759,7 @@ class TestOccupantAllocation:
 
     def test_allot_occupants_normal_allocation(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_buildings_with_types: gpd.GeoDataFrame,
         sample_census_blocks_with_population: gpd.GeoDataFrame
     ) -> None:
@@ -796,7 +796,7 @@ class TestOccupantAllocation:
 
     def test_allot_occupants_capacity_adjustment(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test occupant allocation when capacity adjustment is needed."""
         # Create buildings with low capacity relative to population
@@ -833,7 +833,7 @@ class TestOccupantAllocation:
 
     def test_allot_occupants_empty_buildings_input(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_census_blocks_with_population: gpd.GeoDataFrame
     ) -> None:
         """Test occupant allocation with empty buildings input."""
@@ -848,7 +848,7 @@ class TestOccupantAllocation:
 
     def test_allot_occupants_empty_census_blocks(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_buildings_with_types: gpd.GeoDataFrame
     ) -> None:
         """Test occupant allocation with empty census blocks."""
@@ -866,7 +866,7 @@ class TestOccupantAllocation:
 
     def test_allot_occupants_zero_population(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_buildings_with_types: gpd.GeoDataFrame
     ) -> None:
         """Test occupant allocation with zero population census blocks."""
@@ -889,7 +889,7 @@ class TestOccupantAllocation:
 
     def test_allot_occupants_mixed_building_types(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test allocation with mixed building types in same census block."""
         # Mix of building types with different characteristics
@@ -955,7 +955,7 @@ class TestEvaluationFunction:
 
     def test_evaluate_census_block_allocation_normal(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_allocated_buildings: gpd.GeoDataFrame
     ) -> None:
         """Test evaluation function with normal input."""
@@ -987,7 +987,7 @@ class TestEvaluationFunction:
 
     def test_evaluate_census_block_allocation_empty_block(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_allocated_buildings: gpd.GeoDataFrame
     ) -> None:
         """Test evaluation function with non-existent census block."""
@@ -1001,7 +1001,7 @@ class TestEvaluationFunction:
 
     def test_evaluate_census_block_allocation_empty_buildings(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test evaluation function with empty buildings input."""
         empty_buildings = gpd.GeoDataFrame({'geometry': []}, crs="EPSG:5070")
@@ -1015,7 +1015,7 @@ class TestEvaluationFunction:
 
     def test_evaluate_census_block_allocation_missing_columns(
         self,
-        building_processor: BuildingHeuristicsProcessor
+        building_processor: BuildingProcessor
     ) -> None:
         """Test evaluation function with missing required columns."""
         buildings_data = {
@@ -1063,7 +1063,7 @@ class TestConstructionYearAllocation:
 
     def test_allot_construction_year_normal_distribution(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_buildings_for_vintage: gpd.GeoDataFrame,
         sample_vintage_distribution: dict
     ) -> None:
@@ -1094,7 +1094,7 @@ class TestConstructionYearAllocation:
 
     def test_allot_construction_year_empty_buildings(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_vintage_distribution: dict
     ) -> None:
         """Test construction year allocation with empty buildings input."""
@@ -1110,7 +1110,7 @@ class TestConstructionYearAllocation:
 
     def test_allot_construction_year_empty_distribution(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_buildings_for_vintage: gpd.GeoDataFrame
     ) -> None:
         """Test construction year allocation with empty distribution."""
@@ -1128,7 +1128,7 @@ class TestConstructionYearAllocation:
 
     def test_allot_construction_year_invalid_distribution(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_buildings_for_vintage: gpd.GeoDataFrame
     ) -> None:
         """Test construction year allocation with invalid distribution (all zeros)."""
@@ -1150,7 +1150,7 @@ class TestConstructionYearAllocation:
 
     def test_allot_construction_year_unnormalized_distribution(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_buildings_for_vintage: gpd.GeoDataFrame
     ) -> None:
         """Test construction year allocation with unnormalized distribution."""
@@ -1192,7 +1192,7 @@ class TestConstructionYearAllocation:
 
     def test_allot_construction_year_single_vintage(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_buildings_for_vintage: gpd.GeoDataFrame
     ) -> None:
         """Test construction year allocation with single vintage bin."""
@@ -1212,7 +1212,7 @@ class TestConstructionYearAllocation:
 
     def test_allot_construction_year_reproducibility(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_buildings_for_vintage: gpd.GeoDataFrame,
         sample_vintage_distribution: dict
     ) -> None:
@@ -1236,7 +1236,7 @@ class TestConstructionYearAllocation:
 
     def test_allot_construction_year_preserves_other_columns(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_buildings_for_vintage: gpd.GeoDataFrame,
         sample_vintage_distribution: dict
     ) -> None:
@@ -1259,7 +1259,7 @@ class TestConstructionYearAllocation:
 
     def test_allot_construction_year_small_sample(
         self,
-        building_processor: BuildingHeuristicsProcessor,
+        building_processor: BuildingProcessor,
         sample_vintage_distribution: dict
     ) -> None:
         """Test construction year allocation with very small building sample."""
