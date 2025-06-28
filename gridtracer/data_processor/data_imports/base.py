@@ -5,19 +5,18 @@ This module provides the base DataHandler class which defines common functionali
 for downloading, processing, and saving different types of data sources.
 """
 
-import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import geopandas as gpd
 
+from gridtracer.config import config
+from gridtracer.utils import create_logger
+
 if TYPE_CHECKING:
     from gridtracer.data_processor.workflow import (
         WorkflowOrchestrator,)  # Forward reference for type hinting
-
-# Set up logging
-logger = logging.getLogger(__name__)
 
 
 class DataHandler(ABC):
@@ -38,7 +37,11 @@ class DataHandler(ABC):
                 providing access to configuration, FIPS, and output paths.
         """
         self.orchestrator = orchestrator
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger = create_logger(
+            name=f"{self.__class__.__module__}.{self.__class__.__name__}",
+            log_level=config.log_level,
+            log_file=config.log_file,
+        )
 
         self.dataset_name: str = self._get_dataset_name()
         # Get the pre-created dataset-specific output directory from the orchestrator
@@ -46,7 +49,9 @@ class DataHandler(ABC):
             self.dataset_name
         )
         self.logger.debug(
-            f"DataHandler for '{self.dataset_name}' initialized. Output dir: {self.dataset_output_dir}")
+            f"DataHandler for '{self.dataset_name}' initialized. "
+            f"Output dir: {self.dataset_output_dir}"
+        )
 
     @abstractmethod
     def _get_dataset_name(self) -> str:  # Added type hint

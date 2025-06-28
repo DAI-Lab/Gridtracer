@@ -1,22 +1,24 @@
 import logging
 import os
 from pathlib import Path
+from typing import Any, Dict
 
 import yaml
 
 
 class ConfigLoader:
     """
-    Load and manage configuration settings from YAML files for the gridtracer data processor
+    Load and manage configuration settings from YAML files for the gridtracer data processor.
+
+    This class is designed to be used as a singleton. A single instance is
+    created at the module level, which should be imported by other parts of
+    the application.
     """
 
     def __init__(self, config_path=None):
         """
-        Initialize the ConfigLoader with a path to a YAML configuration file.
-
-        Args:
-            config_path (str, optional): Path to the configuration file.
-                If None, will look for config.yaml in the same directory as this script.
+        Initialize the ConfigLoader, load the YAML file, and set key config
+        properties as attributes.
         """
         self.logger = logging.getLogger(__name__)
 
@@ -26,10 +28,15 @@ class ConfigLoader:
         else:
             self.config_path = config_path
 
-        self.config = self._load_config()
+        self.config: Dict[str, Any] = self._load_config()
+
+        # Expose logging configuration as direct attributes for simple access
+        self.log_level: int = self._parse_log_level()
+        self.log_file: str = self._parse_log_file()
+
         self._validate_region()
 
-    def _load_config(self):
+    def _load_config(self) -> Dict[str, Any]:
         """
         Load configuration from YAML file.
 
@@ -38,15 +45,42 @@ class ConfigLoader:
         """
         try:
             with open(self.config_path, 'r') as f:
-                config = yaml.safe_load(f)
+                config_data = yaml.safe_load(f)
                 self.logger.info(f"Loaded configuration from {self.config_path}")
-                return config
+                return config_data
         except FileNotFoundError:
             self.logger.error(f"Configuration file not found: {self.config_path}")
             raise
         except yaml.YAMLError as e:
             self.logger.error(f"Error parsing YAML configuration: {str(e)}")
             raise
+
+    def _parse_log_level(self) -> int:
+        """Get the logging level from the configuration.
+        Returns:
+            int: The logging level (e.g., logging.INFO, logging.DEBUG).
+                 Defaults to logging.INFO if not specified or invalid.
+        """
+        log_level_str = self.config.get("log_level", "INFO").upper()
+        level = getattr(logging, log_level_str, None)
+
+        if not isinstance(level, int):
+            # Use root logger for this warning, as the class logger may not
+            # be fully configured yet.
+            logging.warning(
+                "Invalid log level '%s' in config. Defaulting to INFO.",
+                log_level_str,
+            )
+            return logging.INFO
+
+        return level
+
+    def _parse_log_file(self) -> str:
+        """Get the log file path from the configuration.
+        Returns:
+            str: The path to the log file.
+        """
+        return self.config.get('log_file', 'log.txt')
 
     def _validate_region(self):
         """
@@ -171,3 +205,9 @@ class ConfigLoader:
         except Exception as e:
             self.logger.error(f"Error saving configuration: {str(e)}")
             raise
+
+
+# --- Singleton Instance ---
+# This single, pre-initialized instance should be imported by other modules
+# to ensure consistent configuration access across the application.
+config = ConfigLoader()

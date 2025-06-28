@@ -10,6 +10,7 @@ This module tests the core orchestration functionality including:
 - Error handling and edge cases
 """
 
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any, Dict
@@ -19,7 +20,6 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from gridtracer.config import ConfigLoader
 from gridtracer.data_processor.workflow import ALL_DATASETS, WorkflowOrchestrator
 
 
@@ -104,14 +104,14 @@ def temp_output_dir():
 @pytest.fixture
 def mock_config_loader(sample_config, temp_output_dir):
     """Fixture providing a mocked ConfigLoader."""
-    with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
-        mock_loader = Mock(spec=ConfigLoader)
-        mock_loader.get_region.return_value = sample_config['region']
-        mock_loader.get_output_dir.return_value = temp_output_dir
-        mock_loader.get_input_data_paths.return_value = sample_config['input_data']
-        mock_loader.get_overpass_config.return_value = sample_config['overpass']
-        mock_loader_class.return_value = mock_loader
-        yield mock_loader
+    with patch('gridtracer.data_processor.workflow.config') as mock_config:
+        mock_config.get_region.return_value = sample_config['region']
+        mock_config.get_output_dir.return_value = temp_output_dir
+        mock_config.get_input_data_paths.return_value = sample_config['input_data']
+        mock_config.get_overpass_config.return_value = sample_config['overpass']
+        mock_config.log_level = logging.INFO
+        mock_config.log_file = "test.log"
+        yield mock_config
 
 
 def create_mock_fips_file(filepath: Path, content: str) -> None:
@@ -178,11 +178,11 @@ class TestWorkflowOrchestratorInitialization:
             # Missing county and lookup_url
         }
 
-        with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
-            mock_loader = Mock()
-            mock_loader.get_region.return_value = incomplete_config
-            mock_loader.get_output_dir.return_value = temp_output_dir
-            mock_loader_class.return_value = mock_loader
+        with patch('gridtracer.data_processor.workflow.config') as mock_config:
+            mock_config.get_region.return_value = incomplete_config
+            mock_config.get_output_dir.return_value = temp_output_dir
+            mock_config.log_level = logging.INFO
+            mock_config.log_file = "test.log"
 
             with pytest.raises(
                 ValueError,
@@ -720,19 +720,19 @@ class TestIntegrationScenarios:
             Path(filepath), fips_content
         )
 
-        with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
-            mock_loader = Mock()
-            mock_loader.get_region.return_value = config_without_subdivision['region']
-            mock_loader.get_output_dir.return_value = Path(
+        with patch('gridtracer.data_processor.workflow.config') as mock_config:
+            mock_config.get_region.return_value = config_without_subdivision['region']
+            mock_config.get_output_dir.return_value = Path(
                 config_without_subdivision['output_dir']
             )
-            mock_loader.get_input_data_paths.return_value = (
+            mock_config.get_input_data_paths.return_value = (
                 config_without_subdivision['input_data']
             )
-            mock_loader.get_overpass_config.return_value = (
+            mock_config.get_overpass_config.return_value = (
                 config_without_subdivision['overpass']
             )
-            mock_loader_class.return_value = mock_loader
+            mock_config.log_level = logging.INFO
+            mock_config.log_file = "test.log"
 
             orchestrator = WorkflowOrchestrator()
 

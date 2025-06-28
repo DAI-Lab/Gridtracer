@@ -5,7 +5,6 @@ This module provides functionality to extract and process OpenStreetMap road
 data to create a PostgreSQL/PostGIS compatible SQL file for pgRouting.
 """
 
-import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 import geopandas as gpd
@@ -16,13 +15,10 @@ from shapely.wkb import dumps as wkb_dumps
 from tqdm import tqdm
 
 from gridtracer.data_processor.data_imports.base import DataHandler
-from gridtracer.data_processor.utils.log_config import logger
 
 if TYPE_CHECKING:
     from gridtracer.data_processor.workflow import WorkflowOrchestrator
 
-# Initialize logger
-logger = logging.getLogger(__name__)
 
 # --- SQL Templates ---
 HEADER_SQL = """SET client_encoding = 'UTF8';
@@ -130,7 +126,7 @@ class RoadNetworkBuilder(DataHandler):
                 default_config.update(config)
                 return default_config
         except FileNotFoundError:
-            logger.warning(
+            self.logger.warning(
                 f"Configuration file '{self.config_file}' not found. "
                 f"Using default values."
             )
@@ -209,10 +205,10 @@ class RoadNetworkBuilder(DataHandler):
             List of SQL value tuple strings.
         """
         if edges_gdf.empty:
-            logger.info(f"[{tile_identifier}] No edges to process.")
+            self.logger.info(f"[{tile_identifier}] No edges to process.")
             return []  # Return empty list
 
-        logger.info(
+        self.logger.info(
             f"[{tile_identifier}] Processing {len(edges_gdf)} edges: "
             f"Resolving tags, calculating costs, applying filters..."
         )
@@ -235,14 +231,14 @@ class RoadNetworkBuilder(DataHandler):
             clazz, maxspeed, flags = self._resolve_way_tags(tags)
 
             if not self._is_way_allowed_by_final_mask(flags):
-                logger.debug(
+                self.logger.debug(
                     "Skipping way %s due to final mask. Flags: %s",
                     way_id, flags
                 )
                 continue  # Skip this edge
 
             if clazz == 0:
-                logger.debug("Skipping way %s due to clazz 0. Tags: %s", way_id, tags)
+                self.logger.debug("Skipping way %s due to clazz 0. Tags: %s", way_id, tags)
                 continue  # Skip ways that didn't resolve
 
             processed_edge = row.to_dict()
@@ -293,13 +289,13 @@ class RoadNetworkBuilder(DataHandler):
             processed_edges_list.append(processed_edge)
 
         if not processed_edges_list:
-            logger.info(f"[{tile_identifier}] No edges remained after processing.")
+            self.logger.info(f"[{tile_identifier}] No edges remained after processing.")
             return []  # Return empty list
 
         edges = gpd.GeoDataFrame(
             processed_edges_list, geometry='geometry', crs=original_crs
         )
-        logger.info(f"[{tile_identifier}] Processing complete. {len(edges)} edges remaining.")
+        self.logger.info(f"[{tile_identifier}] Processing complete. {len(edges)} edges remaining.")
 
         insert_value_tuples = []
 
@@ -350,7 +346,7 @@ class RoadNetworkBuilder(DataHandler):
                 x2, y2 = coords[-1]
                 geom_hex_ewkb = wkb_dumps(row.geometry, hex=True, srid=4326)
             except Exception as e:
-                logger.warning(
+                self.logger.warning(
                     f"[{tile_identifier}] Skipping edge {osm_id} "
                     f"due to geometry error: {e}"
                 )
@@ -386,13 +382,13 @@ class RoadNetworkBuilder(DataHandler):
 
         osm = self.orchestrator.get_osm_parser()
         if osm is None:
-            logger.error(
+            self.logger.error(
                 "OSM parser not available from orchestrator. Cannot build road network."
             )
             return results
 
         try:
-            logger.info(
+            self.logger.info(
                 "Extracting network using pre-initialized OSM parser")
             nodes, edges_gdf = osm.get_network(nodes=True, network_type="driving")
 
@@ -408,7 +404,7 @@ class RoadNetworkBuilder(DataHandler):
 
             edges_gdf = edges_gdf.reset_index()
 
-            logger.info(f"Loaded {len(nodes)} nodes and {len(edges_gdf)} total edges.")
+            self.logger.info(f"Loaded {len(nodes)} nodes and {len(edges_gdf)} total edges.")
 
             # Create source and target columns for postgis routing by mapping u,v to
             # integers starting from 0,1,2,3, etc.
@@ -428,10 +424,10 @@ class RoadNetworkBuilder(DataHandler):
             try:
                 # Save to GeoJSON
                 edges_gdf.to_file(geojson_path, driver='GeoJSON')
-                logger.info(f"Saved road network to GeoJSON: {geojson_path}")
+                self.logger.info(f"Saved road network to GeoJSON: {geojson_path}")
                 results['geojson_file'] = geojson_path
             except Exception as e:
-                logger.error(f"Error exporting network to GeoJSON: {e}")
+                self.logger.error(f"Error exporting network to GeoJSON: {e}")
 
             # Process the edges for SQL
             insert_value_tuples = self._process_and_write_edges(edges_gdf, "ALL_DATA")
@@ -445,7 +441,7 @@ class RoadNetworkBuilder(DataHandler):
                 chunk_size = 1000
                 total_chunks = (len(insert_value_tuples) + chunk_size - 1) // chunk_size
 
-                logger.info(
+                self.logger.info(
                     f"Generating {len(insert_value_tuples)} insert statements in "
                     f"{total_chunks} chunks of {chunk_size}")
 
@@ -461,11 +457,11 @@ class RoadNetworkBuilder(DataHandler):
                     chunk_insert = insert_prefix + "\n" + ",\n".join(chunk) + ";\n"
                     full_sql_content.append(chunk_insert)
 
-                logger.info(
+                self.logger.info(
                     f"Generated {total_chunks} INSERT statements with "
                     f"{len(insert_value_tuples)} total rows.")
             else:
-                logger.warning("No insert statements generated.")
+                self.logger.warning("No insert statements generated.")
 
             full_sql_content.append(INDEX_SQL)
 
@@ -474,16 +470,16 @@ class RoadNetworkBuilder(DataHandler):
                 with open(output_sql_file, "w", encoding="utf-8") as f:
                     # Add some spacing between main SQL sections
                     f.write("\n\n".join(full_sql_content))
-                logger.info(f"All SQL commands written to {output_sql_file}")
+                self.logger.info(f"All SQL commands written to {output_sql_file}")
                 results['sql_file'] = output_sql_file
             except IOError as e:
-                logger.error(f"Error writing full SQL file {output_sql_file}: {e}")
+                self.logger.error(f"Error writing full SQL file {output_sql_file}: {e}")
 
             # Store the edges in results
             results['edges'] = edges_gdf
 
         except Exception as e:
-            logger.error(f"Error building road network: {e}")
+            self.logger.error(f"Error building road network: {e}")
 
         return results
 

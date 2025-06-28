@@ -119,3 +119,6 @@ test_output/
 
 # Cache folder
 cache/
+
+# Logs
+logs/

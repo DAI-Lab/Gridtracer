@@ -6,7 +6,6 @@ including QuadKey mapping, state-level filtering, and region-specific clipping.
 """
 
 import json
-import logging
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
@@ -20,9 +19,6 @@ from gridtracer.data_processor.data_imports.base import DataHandler
 
 if TYPE_CHECKING:
     from gridtracer.data_processor.workflow import WorkflowOrchestrator
-
-# Set up logging
-logger = logging.getLogger(__name__)
 
 
 class MicrosoftBuildingsDataHandler(DataHandler):

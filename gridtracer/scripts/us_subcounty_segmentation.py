@@ -12,7 +12,14 @@ import pandas as pd
 from shapely.ops import unary_union
 from tqdm import tqdm
 
-from gridtracer.data_processor.utils.log_config import logger
+from gridtracer.config import config
+from gridtracer.utils import create_logger
+
+logger = create_logger(
+    name="US_Subcounty_Segmentation",
+    log_level=config.log_level,
+    log_file=config.log_file,
+)
 
 # --- Configuration ---
 NUM_PROCESSES = 5  # Number of states to process in parallel

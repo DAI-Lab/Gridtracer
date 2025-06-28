@@ -1,4 +1,8 @@
-# YAML file for configuration and paths of the data processor
+# YAML file for configuration
+
+# LOGGING
+log_level: "INFO"
+log_file: "logs/gridtracer.log"
 
 # Region Selection is done via the official US Census Bureau FIPS codes
 # An overview can be found here: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt

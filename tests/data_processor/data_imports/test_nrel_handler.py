@@ -1,9 +1,10 @@
 """Tests for NREL data handler."""
 
+import logging
 import tempfile
 from collections import OrderedDict
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -61,13 +62,13 @@ class TestNRELDataHandler:
             # Missing nrel_data
         }
 
-        with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
-            mock_loader = Mock()
-            mock_loader.get_region.return_value = config_without_nrel['region']
-            mock_loader.get_output_dir.return_value = temp_output_dir
-            mock_loader.get_input_data_paths.return_value = config_without_nrel['input_data']
-            mock_loader.get_overpass_config.return_value = config_without_nrel['overpass']
-            mock_loader_class.return_value = mock_loader
+        with patch('gridtracer.data_processor.workflow.config') as mock_config:
+            mock_config.get_region.return_value = config_without_nrel['region']
+            mock_config.get_output_dir.return_value = temp_output_dir
+            mock_config.get_input_data_paths.return_value = config_without_nrel['input_data']
+            mock_config.get_overpass_config.return_value = config_without_nrel['overpass']
+            mock_config.log_level = logging.INFO
+            mock_config.log_file = "test.log"
 
             with patch('urllib.request.urlretrieve') as mock_urlretrieve:
                 # Create the FIPS file manually
@@ -81,7 +82,7 @@ class TestNRELDataHandler:
                 handler = NRELDataHandler(orchestrator)
 
                 assert handler.input_file_path is None
-                assert "NREL input data path ('nrel_data') not found" in caplog.text
+                assert "NREL input data path ('nrel_data') not found in configuration." in caplog.text
 
     def test_validate_inputs_success(self, orchestrator_with_fips, temp_tsv_file: Path) -> None:
         """Test successful input validation."""
@@ -224,13 +225,13 @@ class TestNRELDataHandler:
         config_invalid = sample_config.copy()
         config_invalid['input_data'] = {}  # No NREL data path
 
-        with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
-            mock_loader = Mock()
-            mock_loader.get_region.return_value = None  # Invalid FIPS
-            mock_loader.get_output_dir.return_value = temp_output_dir
-            mock_loader.get_input_data_paths.return_value = config_invalid['input_data']
-            mock_loader.get_overpass_config.return_value = config_invalid['overpass']
-            mock_loader_class.return_value = mock_loader
+        with patch('gridtracer.data_processor.workflow.config') as mock_config:
+            mock_config.get_region.return_value = None  # Invalid FIPS
+            mock_config.get_output_dir.return_value = temp_output_dir
+            mock_config.get_input_data_paths.return_value = config_invalid['input_data']
+            mock_config.get_overpass_config.return_value = config_invalid['overpass']
+            mock_config.log_level = logging.INFO
+            mock_config.log_file = "test.log"
 
             with patch('urllib.request.urlretrieve'):
                 from gridtracer.data_processor.workflow import WorkflowOrchestrator

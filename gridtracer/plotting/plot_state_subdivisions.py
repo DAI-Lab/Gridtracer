@@ -1,5 +1,4 @@
 import argparse
-import logging
 from pathlib import Path
 
 import contextily as ctx
@@ -8,9 +7,13 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from shapely import wkb
 
-# Set up basic logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+from gridtracer.config import config
+from gridtracer.utils import create_logger
+
+logger = create_logger(
+    name="PlotStateSubdivisions",
+    log_level=config.log_level,
+    log_file=config.log_file,
 )
 
 
@@ -24,27 +27,27 @@ def plot_subdivisions(csv_path: Path, show_labels: bool = True):
         show_labels (bool): If True, adds name and population labels to subdivisions.
     """
     if not csv_path.exists():
-        logging.error(f"Input file not found at: {csv_path}")
+        logger.error(f"Input file not found at: {csv_path}")
         return
 
-    logging.info(f"Reading data from {csv_path}")
+    logger.info(f"Reading data from {csv_path}")
     df = pd.read_csv(csv_path)
 
     if 'geom' not in df.columns:
-        logging.error("CSV file must contain a 'geom' column with WKB hex strings.")
+        logger.error("CSV file must contain a 'geom' column with WKB hex strings.")
         return
 
     # 1. Convert WKB hex strings to Shapely geometry objects
     try:
         df["geometry"] = df["geom"].apply(lambda x: wkb.loads(x, hex=True))
     except Exception as e:
-        logging.error(f"Failed to parse geometries: {e}")
+        logger.error(f"Failed to parse geometries: {e}")
         return
 
     # 2. Create a GeoDataFrame
     # The original TIGER data is typically NAD83 (EPSG:4269)
     gdf = gpd.GeoDataFrame(df, geometry="geometry", crs="EPSG:4269")
-    logging.info(f"Successfully created GeoDataFrame with {len(gdf)} subdivisions.")
+    logger.info(f"Successfully created GeoDataFrame with {len(gdf)} subdivisions.")
 
     # Calculate total population for the title
     total_population = int(df["POPULATION"].sum())
@@ -62,7 +65,7 @@ def plot_subdivisions(csv_path: Path, show_labels: bool = True):
 
     # 4. Add annotations for each subdivision if enabled
     if show_labels:
-        logging.info("Adding annotations to subdivisions...")
+        logger.info("Adding annotations to subdivisions...")
         for idx, row in gdf_web_mercator.iterrows():
             # Use representative_point to ensure the label is within the polygon
             centroid = row.geometry.representative_point()
@@ -81,11 +84,11 @@ def plot_subdivisions(csv_path: Path, show_labels: bool = True):
             )
 
     # 5. Add a basemap
-    logging.info("Adding basemap...")
+    logger.info("Adding basemap...")
     try:
         ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron, zoom="auto")
     except Exception as e:
-        logging.warning(f"Could not add basemap: {e}")
+        logger.warning(f"Could not add basemap: {e}")
 
     # Final plot styling
     state_name = gdf.iloc[0]['state_abbr']
@@ -99,7 +102,7 @@ def plot_subdivisions(csv_path: Path, show_labels: bool = True):
     # 6. Save the plot
     output_filename = csv_path.parent.parent / f"{state_name}_subdivisions_map.png"
     plt.savefig(output_filename, dpi=300)
-    logging.info(f"Map saved to: {output_filename}")
+    logger.info(f"Map saved to: {output_filename}")
     plt.show()
 
 

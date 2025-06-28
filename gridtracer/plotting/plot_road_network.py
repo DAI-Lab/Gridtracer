@@ -4,7 +4,14 @@ import contextily as ctx
 import geopandas as gpd
 import matplotlib.pyplot as plt
 
-from gridtracer.data_processor.utils.log_config import logger
+from gridtracer.config import config
+from gridtracer.utils import create_logger
+
+logger = create_logger(
+    name="PlotRoadNetwork",
+    log_level=config.log_level,
+    log_file=config.log_file,
+)
 
 
 def visualize_road_network(network_data, boundary_gdf=None,

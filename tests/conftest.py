@@ -1,15 +1,15 @@
 """Shared test fixtures for data processor tests."""
 
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any, Dict
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from gridtracer.config import ConfigLoader
 from gridtracer.data_processor.workflow import WorkflowOrchestrator
 
 
@@ -81,14 +81,14 @@ def temp_output_dir():
 @pytest.fixture
 def mock_config_loader(sample_config, temp_output_dir):
     """Fixture providing a mocked ConfigLoader."""
-    with patch('gridtracer.data_processor.workflow.ConfigLoader') as mock_loader_class:
-        mock_loader = Mock(spec=ConfigLoader)
-        mock_loader.get_region.return_value = sample_config['region']
-        mock_loader.get_output_dir.return_value = temp_output_dir
-        mock_loader.get_input_data_paths.return_value = sample_config['input_data']
-        mock_loader.get_overpass_config.return_value = sample_config['overpass']
-        mock_loader_class.return_value = mock_loader
-        yield mock_loader
+    with patch('gridtracer.data_processor.workflow.config') as mock_config:
+        mock_config.get_region.return_value = sample_config['region']
+        mock_config.get_output_dir.return_value = temp_output_dir
+        mock_config.get_input_data_paths.return_value = sample_config['input_data']
+        mock_config.get_overpass_config.return_value = sample_config['overpass']
+        mock_config.log_level = logging.INFO
+        mock_config.log_file = 'test.log'
+        yield mock_config
 
 
 def create_mock_fips_file(filepath: Path, content: str) -> None:

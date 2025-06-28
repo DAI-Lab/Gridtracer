@@ -264,10 +264,10 @@ def test_fips_integration(road_network_builder):
     assert 'state' in fips_dict
     assert 'county' in fips_dict
     assert fips_dict['state'] == 'MA'  # From the shared fixture
+    assert fips_dict['state_fips'] == '25'
 
 
-@patch('gridtracer.data_processor.data_imports.osm.road_network_builder.logger')
-def test_download_method_not_implemented(mock_logger, road_network_builder):
-    """Test that download method raises NotImplementedError."""
+def test_download_method_not_implemented(road_network_builder):
+    """Test that the download method raises NotImplementedError."""
     with pytest.raises(NotImplementedError):
         road_network_builder.download()

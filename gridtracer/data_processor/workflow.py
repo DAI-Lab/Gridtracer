@@ -1,5 +1,4 @@
 import csv
-import logging
 import os
 import urllib.request
 import warnings
@@ -11,7 +10,8 @@ import pandas as pd
 from pyrosm import OSM
 from shapely.geometry import MultiPolygon, Polygon
 
-from gridtracer.config import ConfigLoader
+from gridtracer.config import config
+from gridtracer.utils import create_logger
 
 # Define all known dataset names for directory creation
 ALL_DATASETS: List[str] = [
@@ -34,16 +34,16 @@ class WorkflowOrchestrator:
     output directory structures for all datasets, and the overall workflow execution.
     """
 
-    def __init__(self, config_path: Optional[str] = None) -> None:
+    def __init__(self) -> None:
         """
         Initialize the WorkflowOrchestrator.
-
-        Args:
-            config_path (Optional[str]): Path to the YAML configuration file.
-                If None, ConfigLoader will use its default path.
         """
-        self.logger = logging.getLogger(__name__)
-        self.config_loader: ConfigLoader = ConfigLoader(config_path)
+        self.config_loader = config
+        self.logger = create_logger(
+            name="WorkflowOrchestrator",
+            log_level=self.config_loader.log_level,
+            log_file=self.config_loader.log_file
+        )
         self.base_output_dir: Path = self.config_loader.get_output_dir()
 
         self.fips_dict: Optional[Dict[str, str]] = None

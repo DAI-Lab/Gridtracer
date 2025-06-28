@@ -1,4 +1,3 @@
-import logging
 from typing import Dict, Optional
 
 import contextily as ctx
@@ -7,9 +6,6 @@ import matplotlib.pyplot as plt
 import pandas as pd  # For timestamp in plotting
 
 from gridtracer.data_processor.data_imports.base import DataHandler
-
-# Set up logging
-logger = logging.getLogger(__name__)
 
 
 class CensusDataHandler(DataHandler):

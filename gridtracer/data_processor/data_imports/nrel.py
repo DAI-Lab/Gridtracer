@@ -5,7 +5,6 @@ This module provides functionality to process NREL residential building
 typology datasets.
 """
 
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, OrderedDict
 
@@ -22,9 +21,6 @@ EXPECTED_VINTAGE_BINS = [
     "<1940", "1940s", "1950s", "1960s", "1970s",
     "1980s", "1990s", "2000s", "2010s"
 ]
-
-# Set up logging
-logger = logging.getLogger(__name__)
 
 
 class NRELDataHandler(DataHandler):
@@ -251,7 +247,7 @@ class NRELDataHandler(DataHandler):
 
         if vintage_col not in df.columns:
             msg = f"Column '{vintage_col}' not found – cannot build vintage distribution."
-            logger.warning(msg)
+            self.logger.warning(msg)
             return OrderedDict((k, 0.0) for k in EXPECTED_VINTAGE_BINS)
 
         # Map NREL vintage labels directly to our bins
