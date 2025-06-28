@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Dict, Optional, OrderedDict
 import pandas as pd
 from tqdm import tqdm
 
-from gridtracer.data_processor.data.base import DataHandler
+from gridtracer.data_processor.data_imports.base import DataHandler
 
 if TYPE_CHECKING:
     from gridtracer.data_processor.workflow import WorkflowOrchestrator

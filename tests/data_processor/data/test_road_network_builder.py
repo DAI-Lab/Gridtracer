@@ -12,7 +12,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import LineString
 
-from gridtracer.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
+from gridtracer.data_processor.data_imports.osm.road_network_builder import RoadNetworkBuilder
 
 
 @pytest.fixture

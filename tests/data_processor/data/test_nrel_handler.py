@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
-from gridtracer.data_processor.data.nrel import EXPECTED_VINTAGE_BINS, NRELDataHandler
+from gridtracer.data_processor.data_imports.nrel import EXPECTED_VINTAGE_BINS, NRELDataHandler
 
 
 class TestNRELDataHandler:

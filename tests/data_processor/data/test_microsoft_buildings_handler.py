@@ -12,7 +12,8 @@ from pathlib import Path
 import geopandas as gpd
 import pytest
 
-from gridtracer.data_processor.data.microsoft_buildings import MicrosoftBuildingsDataHandler
+from gridtracer.data_processor.data_imports.microsoft_buildings import (
+    MicrosoftBuildingsDataHandler,)
 from gridtracer.data_processor.workflow import WorkflowOrchestrator
 
 # Add project root to path for imports

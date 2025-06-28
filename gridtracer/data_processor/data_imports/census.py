@@ -6,7 +6,7 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import pandas as pd  # For timestamp in plotting
 
-from gridtracer.data_processor.data.base import DataHandler
+from gridtracer.data_processor.data_imports.base import DataHandler
 
 # Set up logging
 logger = logging.getLogger(__name__)

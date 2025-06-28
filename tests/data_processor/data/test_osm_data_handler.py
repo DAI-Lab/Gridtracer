@@ -13,7 +13,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Point, Polygon
 
-from gridtracer.data_processor.data.osm.osm_data_handler import OSMDataHandler
+from gridtracer.data_processor.data_imports.osm.osm_data_handler import OSMDataHandler
 
 if TYPE_CHECKING:
     pass

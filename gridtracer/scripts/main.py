@@ -8,11 +8,12 @@ import time
 
 import geopandas as gpd
 
-from gridtracer.data_processor.data.census import CensusDataHandler
-from gridtracer.data_processor.data.microsoft_buildings import MicrosoftBuildingsDataHandler
-from gridtracer.data_processor.data.nrel import NRELDataHandler
-from gridtracer.data_processor.data.osm.osm_data_handler import OSMDataHandler
-from gridtracer.data_processor.data.osm.road_network_builder import RoadNetworkBuilder
+from gridtracer.data_processor.data_imports.census import CensusDataHandler
+from gridtracer.data_processor.data_imports.microsoft_buildings import (
+    MicrosoftBuildingsDataHandler,)
+from gridtracer.data_processor.data_imports.nrel import NRELDataHandler
+from gridtracer.data_processor.data_imports.osm.osm_data_handler import OSMDataHandler
+from gridtracer.data_processor.data_imports.osm.road_network_builder import RoadNetworkBuilder
 from gridtracer.data_processor.processing.building_processor import BuildingHeuristicsProcessor
 from gridtracer.data_processor.utils.log_config import logger
 from gridtracer.data_processor.workflow import WorkflowOrchestrator
