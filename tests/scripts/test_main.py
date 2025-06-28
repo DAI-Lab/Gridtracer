@@ -16,7 +16,7 @@ from shapely.geometry import Polygon
 if TYPE_CHECKING:
     from _pytest.logging import LogCaptureFixture
 
-from gridtracer.scripts.main import run_pipeline_v2
+from gridtracer.scripts.main import run_full_pipeline
 
 
 # Module-level fixtures available to all test classes
@@ -114,7 +114,7 @@ class TestMainPipeline:
                 patch('gridtracer.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
                 patch('gridtracer.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
                 patch('gridtracer.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
-                patch('gridtracer.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class, \
+                patch('gridtracer.scripts.main.BuildingProcessor') as mock_building_processor_class, \
                 patch('gridtracer.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
 
             # Setup orchestrator mock
@@ -149,7 +149,7 @@ class TestMainPipeline:
             mock_road_builder_class.return_value = mock_road_builder
 
             # Execute pipeline
-            run_pipeline_v2()
+            run_full_pipeline()
 
             # Verify orchestrator was created
             mock_orchestrator_class.assert_called_once()
@@ -180,10 +180,7 @@ class TestMainPipeline:
 
             # Verify road network builder was created and called
             mock_road_builder_class.assert_called_once_with(orchestrator=mock_orchestrator)
-            mock_road_builder.process.assert_called_once_with(
-                boundary_gdf=mock_census_data['target_region_boundary'],
-                plot=True
-            )
+            mock_road_builder.process.assert_called_once_with()
 
             # Verify logging messages (check individual message parts)
             log_text = caplog.text
@@ -214,11 +211,10 @@ class TestMainPipeline:
             mock_census_handler_class.return_value = mock_census_handler
 
             # Setup NREL handler (should not be called)
-            mock_nrel_handler = Mock()
-            mock_nrel_handler_class.return_value = mock_nrel_handler
+            mock_nrel_handler_class.return_value = Mock()
 
             # Execute pipeline
-            run_pipeline_v2()
+            run_full_pipeline()
 
             # Verify census handler was called
             mock_census_handler.process.assert_called_once_with(plot=False)
@@ -251,11 +247,10 @@ class TestMainPipeline:
             mock_census_handler_class.return_value = mock_census_handler
 
             # Setup NREL handler (should not be called)
-            mock_nrel_handler = Mock()
-            mock_nrel_handler_class.return_value = mock_nrel_handler
+            mock_nrel_handler_class.return_value = Mock()
 
             # Execute pipeline
-            run_pipeline_v2()
+            run_full_pipeline()
 
             # Verify census handler was called
             mock_census_handler.process.assert_called_once_with(plot=False)
@@ -299,7 +294,7 @@ class TestMainPipeline:
             mock_osm_handler_class.return_value = mock_osm_handler
 
             # Execute pipeline
-            run_pipeline_v2()
+            run_full_pipeline()
 
             # Verify both handlers were called
             mock_census_handler.process.assert_called_once()
@@ -321,7 +316,7 @@ class TestMainPipeline:
             mock_orchestrator_class.side_effect = ValueError("Invalid configuration")
 
             # Execute pipeline
-            run_pipeline_v2()
+            run_full_pipeline()
 
             # Verify error was logged
             assert "Configuration or validation error during pipeline:" in caplog.text
@@ -345,7 +340,7 @@ class TestMainPipeline:
             mock_census_handler_class.side_effect = RuntimeError("Database connection failed")
 
             # Execute pipeline
-            run_pipeline_v2()
+            run_full_pipeline()
 
             # Verify error was logged
             assert "Runtime error during pipeline execution:" in caplog.text
@@ -363,7 +358,7 @@ class TestMainPipeline:
             mock_orchestrator_class.side_effect = TypeError("Unexpected type error")
 
             # Execute pipeline
-            run_pipeline_v2()
+            run_full_pipeline()
 
             # Verify error was logged
             assert "An unexpected error occurred in the pipeline:" in caplog.text
@@ -384,7 +379,7 @@ class TestMainPipeline:
                 patch('gridtracer.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
                 patch('gridtracer.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
                 patch('gridtracer.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
-                patch('gridtracer.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class:
+                patch('gridtracer.scripts.main.BuildingProcessor') as mock_building_processor_class:
 
             # Setup orchestrator and successful handlers
             mock_orchestrator = Mock()
@@ -415,7 +410,7 @@ class TestMainPipeline:
             # Mock road network builder to avoid complex setup
             with patch('gridtracer.scripts.main.RoadNetworkBuilder'):
                 # Execute pipeline
-                run_pipeline_v2()
+                run_full_pipeline()
 
                 # Verify warning was logged
                 assert "Microsoft Buildings data processing did not yield buildings data." in caplog.text
@@ -454,7 +449,7 @@ class TestMainPipeline:
             with patch('gridtracer.scripts.main.NRELDataHandler') as mock_nrel_class, \
                     patch('gridtracer.scripts.main.OSMDataHandler') as mock_osm_class, \
                     patch('gridtracer.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_class, \
-                    patch('gridtracer.scripts.main.BuildingHeuristicsProcessor') as mock_bp_class:
+                    patch('gridtracer.scripts.main.BuildingProcessor') as mock_bp_class:
 
                 # Setup minimal valid returns to avoid KeyError
                 mock_nrel_handler = Mock()
@@ -472,7 +467,7 @@ class TestMainPipeline:
                 mock_bp_class.return_value = Mock()
 
                 # Execute pipeline
-                run_pipeline_v2()
+                run_full_pipeline()
 
                 # Verify warning was logged
                 assert "Road network generation did not yield a GPKG path." in caplog.text
@@ -497,7 +492,7 @@ class TestPipelineIntegration:
                 patch('gridtracer.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
                 patch('gridtracer.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
                 patch('gridtracer.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
-                patch('gridtracer.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class, \
+                patch('gridtracer.scripts.main.BuildingProcessor') as mock_building_processor_class, \
                 patch('gridtracer.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
 
             # Setup all mocks
@@ -529,7 +524,7 @@ class TestPipelineIntegration:
             mock_road_builder_class.return_value = mock_road_builder
 
             # Execute pipeline
-            run_pipeline_v2()
+            run_full_pipeline()
 
             # Verify data flows correctly to building processor
             mock_building_processor.process.assert_called_once_with(
@@ -540,10 +535,7 @@ class TestPipelineIntegration:
             )
 
             # Verify census boundary flows to road network builder
-            mock_road_builder.process.assert_called_once_with(
-                boundary_gdf=mock_census_data['target_region_boundary'],
-                plot=True
-            )
+            mock_road_builder.process.assert_called_once_with()
 
     def test_pipeline_component_initialization_order(self) -> None:
         """Test that pipeline components are initialized in the correct order."""
@@ -552,7 +544,7 @@ class TestPipelineIntegration:
                 patch('gridtracer.scripts.main.NRELDataHandler') as mock_nrel_handler_class, \
                 patch('gridtracer.scripts.main.OSMDataHandler') as mock_osm_handler_class, \
                 patch('gridtracer.scripts.main.MicrosoftBuildingsDataHandler') as mock_ms_handler_class, \
-                patch('gridtracer.scripts.main.BuildingHeuristicsProcessor') as mock_building_processor_class, \
+                patch('gridtracer.scripts.main.BuildingProcessor') as mock_building_processor_class, \
                 patch('gridtracer.scripts.main.RoadNetworkBuilder') as mock_road_builder_class:
 
             # Setup minimal mocks to allow pipeline to complete
@@ -592,7 +584,7 @@ class TestPipelineIntegration:
             mock_road_builder_class.return_value = mock_road_builder
 
             # Execute pipeline
-            run_pipeline_v2()
+            run_full_pipeline()
 
             # Verify initialization order by checking call order
             # WorkflowOrchestrator should be first

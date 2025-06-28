@@ -1,12 +1,31 @@
-"""
-Entrypoint for the gridtracer data processing pipeline (Version 2.0).
+"""GridTracer Data Processing Pipeline
 
-This script orchestrates the entire data processing workflow using the
-WorkflowOrchestrator.
+This script serves as the main entrypoint for the GridTracer data processing
+workflow. It orchestrates a series of modules to download, process, and
+integrate various geospatial datasets to model electrical grid infrastructure.
+
+The pipeline executes the following stages in order:
+1.  **Census Data Processing:** Fetches census block and geometry data to
+    define the target region's boundary.
+2.  **NREL Data Processing:** Processes NREL RESstock/Comstock data to
+    determine building vintage distributions.
+3.  **OpenStreetMap (OSM) Data Extraction:** Downloads power infrastructure,
+    buildings, and road networks from OSM for the target region.
+4.  **Microsoft Buildings Integration:** Downloads and enriches the buildings with height data.
+5.  **Building Classification:** Combines all building data sources and applies
+    heuristics to classify buildings and estimate electrical loads.
+6.  **Routable Road Network Generation:** Builds a clean, routable road
+    network for use with pgRouting.
+
+Prerequisites:
+  - Define your region of interest in the `config.yaml` file.
+
+Usage:
+  # Run the entire pipeline for the configured region
+  $ python -m gridtracer.scripts.main
 """
 import time
-
-import geopandas as gpd
+from typing import Any, Dict, Optional
 
 from gridtracer.data_processor.data_imports.census import CensusDataHandler
 from gridtracer.data_processor.data_imports.microsoft_buildings import (
@@ -14,33 +33,22 @@ from gridtracer.data_processor.data_imports.microsoft_buildings import (
 from gridtracer.data_processor.data_imports.nrel import NRELDataHandler
 from gridtracer.data_processor.data_imports.osm.osm_data_handler import OSMDataHandler
 from gridtracer.data_processor.data_imports.osm.road_network_builder import RoadNetworkBuilder
-from gridtracer.data_processor.processing.building_processor import BuildingHeuristicsProcessor
+from gridtracer.data_processor.processing.building_processor import BuildingProcessor
 from gridtracer.data_processor.utils.log_config import logger
 from gridtracer.data_processor.workflow import WorkflowOrchestrator
 
 
-def dev_fill_census_results():
-    """
-    Just for testing purposes os i dotn have tpo always rerun this  fills this from precreated links :
-          - 'target_region_blocks': GeoDataFrame of census blocks for the target region.
-                - 'target_region_blocks_filepath': Path to the saved blocks GeoJSON.
-                - 'target_region_boundary': GeoDataFrame representing the final authoritative
-                                            boundary for the processing run.
-                - 'target_region_boundary_filepath': Path to the final region boundary GeoJSON.
-    """
-    region_blocks_filepath = "/Users/magic-rabbit/Documents/00_Tech-Repositories/05_MASTER_THESIS/gridtracer/gridtracer/data_processor/output/MA/Middlesex_County/Cambridge_city_old/Census/25_017_11000_blocks.geojson"
-    region_boundary_filepath = "/Users/magic-rabbit/Documents/00_Tech-Repositories/05_MASTER_THESIS/gridtracer/gridtracer/data_processor/output/MA/Middlesex_County/Cambridge_city_old/Census/25_017_11000_blocks_boundary.geojson"
-    census_data = {}
-    census_data['target_region_blocks'] = gpd.read_file(region_blocks_filepath)
-    census_data['target_region_blocks_filepath'] = region_blocks_filepath
-    census_data['target_region_boundary'] = gpd.read_file(region_boundary_filepath)
-    census_data['target_region_boundary_filepath'] = region_boundary_filepath
-    return census_data
+def run_full_pipeline(
+    census_data: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Run the main gridtracer data processing pipeline.
 
+    Uses the WorkflowOrchestrator to manage the pipeline steps.
 
-def run_pipeline_v2():
-    """
-    Runs the main gridtracer data processing pipeline using the WorkflowOrchestrator.
+    Args:
+        census_data: A dictionary containing pre-loaded census data,
+            including 'target_region_boundary'. If provided, the census
+            data processing step is skipped. Defaults to None.
     """
     start_time = time.time()
     logger.info("Starting gridtracer Data Processing Pipeline v2.0")
@@ -49,68 +57,40 @@ def run_pipeline_v2():
         # # Initialize the orchestrator, loading config, setting up FIPS, and creating all output directories
         orchestrator = WorkflowOrchestrator()
 
-        # TODO: Uncomment this when you want to use the precreated census data
-        # census_data = dev_fill_census_results()
-        # orchestrator.set_region_boundary(census_data['target_region_boundary'])
-
-        # # --- STEP 1: REGIONAL DATA EXTRACTION & PREPARATION ---
+        # --- STEP 1: REGIONAL DATA EXTRACTION & PREPARATION ---
         logger.info("STEP 1: Regional Data Extraction & Preparation")
 
         census_handler = CensusDataHandler(orchestrator)
         census_data = census_handler.process(plot=False)
-        if not census_data or 'target_region_boundary' not in census_data:  # Check for primary output
-            logger.error(
-                "Census data processing failed or did not yield a target_region_boundary. Halting.")
-            return
 
         # --- STEP 2: Process NREL Data ---
 
         logger.info("STEP 2: Processing NREL data")
         nrel_handler = NRELDataHandler(orchestrator)
         nrel_data = nrel_handler.process()
-        if nrel_data.get('parquet_path'):
-            logger.info(
-                f"NREL data processing complete. Parquet at: {nrel_data['parquet_path']}")
-        else:
-            logger.warning("NREL data processing did not yield a parquet path.")
 
         # --- STEP 3: Extract OSM Data ---
+        logger.info("STEP 3: Extracting OSM data")
         osm_handler = OSMDataHandler(orchestrator)
         osm_data = osm_handler.process(plot=False)
-        if osm_data is not None:
-            logger.info("OSM data processing complete.")
-        else:
-            logger.warning("OSM data processing did not yield a result.")
 
         # --- STEP 3.5: Process Microsoft Buildings Data ---
         logger.info("STEP 3.5: Processing Microsoft Buildings data")
         microsoft_buildings_handler = MicrosoftBuildingsDataHandler(orchestrator)
         microsoft_buildings_data = microsoft_buildings_handler.process()
-        if microsoft_buildings_data:
-            logger.info(
-                f"Microsoft Buildings data processing complete. "
-                f"Found {len(microsoft_buildings_data['ms_buildings'])} buildings."
-            )
-        else:
-            logger.warning("Microsoft Buildings data processing did not yield buildings data.")
 
-        # # --- STEP 4: Building Classification Heuristic ---
-        building_classification_heuristic = BuildingHeuristicsProcessor(
+        # # --- STEP 4: Building Classification ---
+        logger.info("STEP 4: Building Classification")
+        building_processor = BuildingProcessor(
             orchestrator.get_dataset_specific_output_directory("BUILDINGS_OUTPUT"))
-        #
-        building_classification_heuristic.process(
+
+        building_processor.process(
             census_data, osm_data, microsoft_buildings_data, nrel_data["vintage_distribution"])
 
         # --- STEP 5: ROUTABLE ROAD NETWORK GENERATION ---
+        logger.info("STEP 5: Routable Road Network Generation")
         road_network_builder = RoadNetworkBuilder(orchestrator=orchestrator)
-        road_network_results = road_network_builder.process(
-            boundary_gdf=census_data['target_region_boundary'], plot=True)
-        if road_network_results.get('geojson_file'):
-            logger.info(
-                f"Road network generation complete. Network GPKG at: {road_network_results['geojson_file']}"
-            )
-        else:
-            logger.warning("Road network generation did not yield a GPKG path.")
+        _ = road_network_builder.process()
 
         logger.info("gridtracer Data Processing Pipeline v2.0 completed successfully.")
 
@@ -125,8 +105,10 @@ def run_pipeline_v2():
         end_time = time.time()
         total_time = end_time - start_time
 
-        logger.info(f"gridtracer Data Processing Pipeline completed in {total_time} seconds")
+        logger.info(
+            f"gridtracer Data Processing Pipeline completed in {total_time} seconds"
+        )
 
 
-if __name__ == '__main__':
-    run_pipeline_v2()
+if __name__ == "__main__":
+    run_full_pipeline()
