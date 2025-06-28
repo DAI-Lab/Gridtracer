@@ -405,7 +405,7 @@ class RoadNetworkBuilder(DataHandler):
         try:
             logger.info(
                 "Extracting network using pre-initialized OSM parser")
-            nodes, edges_gdf = osm.get_network(nodes=True)
+            nodes, edges_gdf = osm.get_network(nodes=True, network_type="driving")
 
             G = osm.to_graph(nodes, edges_gdf, graph_type="networkx")
             G_simplified = ox.simplification.simplify_graph(G)
