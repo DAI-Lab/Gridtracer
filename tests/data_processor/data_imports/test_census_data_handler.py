@@ -14,7 +14,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from gridtracer.data_processor.data_imports.census import CensusDataHandler
+from gridtracer.data.imports.census import CensusDataHandler
 
 
 @pytest.fixture

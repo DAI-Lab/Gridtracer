@@ -10,7 +10,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from gridtracer.data_processor.workflow import WorkflowOrchestrator
+from gridtracer.data.workflow import WorkflowOrchestrator
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ def temp_output_dir():
 @pytest.fixture
 def mock_config_loader(sample_config, temp_output_dir):
     """Fixture providing a mocked ConfigLoader."""
-    with patch('gridtracer.data_processor.workflow.config') as mock_config:
+    with patch('gridtracer.data.workflow.config') as mock_config:
         mock_config.get_region.return_value = sample_config['region']
         mock_config.get_output_dir.return_value = temp_output_dir
         mock_config.get_input_data_paths.return_value = sample_config['input_data']

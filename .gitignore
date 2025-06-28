@@ -109,7 +109,7 @@ ENV/
 .vscode/
 
 # Output_data Folder
-gridtracer/output/
+output/
 test_output/
 # Add all .DS_Store files
 .DS_Store

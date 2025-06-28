@@ -20,7 +20,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from gridtracer.data_processor.workflow import ALL_DATASETS, WorkflowOrchestrator
+from gridtracer.data.workflow import ALL_DATASETS, WorkflowOrchestrator
 
 
 @pytest.fixture
@@ -104,7 +104,7 @@ def temp_output_dir():
 @pytest.fixture
 def mock_config_loader(sample_config, temp_output_dir):
     """Fixture providing a mocked ConfigLoader."""
-    with patch('gridtracer.data_processor.workflow.config') as mock_config:
+    with patch('gridtracer.data.workflow.config') as mock_config:
         mock_config.get_region.return_value = sample_config['region']
         mock_config.get_output_dir.return_value = temp_output_dir
         mock_config.get_input_data_paths.return_value = sample_config['input_data']
@@ -178,7 +178,7 @@ class TestWorkflowOrchestratorInitialization:
             # Missing county and lookup_url
         }
 
-        with patch('gridtracer.data_processor.workflow.config') as mock_config:
+        with patch('gridtracer.data.workflow.config') as mock_config:
             mock_config.get_region.return_value = incomplete_config
             mock_config.get_output_dir.return_value = temp_output_dir
             mock_config.log_level = logging.INFO
@@ -447,7 +447,7 @@ class TestOSMParserIntegration:
     """Test suite for OSM parser integration."""
 
     @patch('pathlib.Path.exists')
-    @patch('gridtracer.data_processor.workflow.OSM')
+    @patch('gridtracer.data.workflow.OSM')
     def test_osm_parser_initialization_success(
         self,
         mock_osm_class,
@@ -503,7 +503,7 @@ class TestOSMParserIntegration:
         assert parser is None
 
     @patch('pathlib.Path.exists')
-    @patch('gridtracer.data_processor.workflow.OSM')
+    @patch('gridtracer.data.workflow.OSM')
     def test_osm_parser_boundary_projection(
         self,
         mock_osm_class,
@@ -546,7 +546,7 @@ class TestOSMParserIntegration:
         mock_osm_class.assert_called_once()
 
     @patch('pathlib.Path.exists')
-    @patch('gridtracer.data_processor.workflow.OSM')
+    @patch('gridtracer.data.workflow.OSM')
     def test_osm_parser_multiple_geometries(
         self,
         mock_osm_class,
@@ -720,7 +720,7 @@ class TestIntegrationScenarios:
             Path(filepath), fips_content
         )
 
-        with patch('gridtracer.data_processor.workflow.config') as mock_config:
+        with patch('gridtracer.data.workflow.config') as mock_config:
             mock_config.get_region.return_value = config_without_subdivision['region']
             mock_config.get_output_dir.return_value = Path(
                 config_without_subdivision['output_dir']

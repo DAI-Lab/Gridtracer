@@ -28,14 +28,14 @@ import time
 from typing import Any, Dict, Optional
 
 from gridtracer.config import config
-from gridtracer.data_processor.data_imports.census import CensusDataHandler
-from gridtracer.data_processor.data_imports.microsoft_buildings import (
+from gridtracer.data.imports.census import CensusDataHandler
+from gridtracer.data.imports.microsoft_buildings import (
     MicrosoftBuildingsDataHandler,)
-from gridtracer.data_processor.data_imports.nrel import NRELDataHandler
-from gridtracer.data_processor.data_imports.osm.osm_data_handler import OSMDataHandler
-from gridtracer.data_processor.data_imports.osm.road_network_builder import RoadNetworkBuilder
-from gridtracer.data_processor.processing.building_processor import BuildingProcessor
-from gridtracer.data_processor.workflow import WorkflowOrchestrator
+from gridtracer.data.imports.nrel import NRELDataHandler
+from gridtracer.data.imports.osm.osm_data_handler import OSMDataHandler
+from gridtracer.data.imports.osm.road_network_builder import RoadNetworkBuilder
+from gridtracer.data.processing.building_processor import BuildingProcessor
+from gridtracer.data.workflow import WorkflowOrchestrator
 from gridtracer.utils import create_logger
 
 logger = create_logger(

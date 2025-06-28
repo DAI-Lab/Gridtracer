@@ -14,8 +14,8 @@ import time
 import geopandas as gpd
 
 from gridtracer.config import config
-from gridtracer.data_processor.data_imports.osm.road_network_builder import RoadNetworkBuilder
-from gridtracer.data_processor.workflow import WorkflowOrchestrator
+from gridtracer.data.imports.osm.road_network_builder import RoadNetworkBuilder
+from gridtracer.data.workflow import WorkflowOrchestrator
 from gridtracer.plotting.plot_road_network import visualize_road_network
 from gridtracer.utils import create_logger
 

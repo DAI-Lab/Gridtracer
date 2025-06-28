@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import Polygon
 
-from gridtracer.data_processor.processing.building_processor import BuildingProcessor
+from gridtracer.data.processing.building_processor import BuildingProcessor
 
 
 @pytest.fixture

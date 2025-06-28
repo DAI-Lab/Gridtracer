@@ -12,7 +12,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import LineString
 
-from gridtracer.data_processor.data_imports.osm.road_network_builder import RoadNetworkBuilder
+from gridtracer.data.imports.osm.road_network_builder import RoadNetworkBuilder
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ def mock_orchestrator_for_road_network(orchestrator_with_fips, temp_output_dir, 
 @pytest.fixture
 def road_network_builder(mock_orchestrator_for_road_network):
     """Create a RoadNetworkBuilder with a mocked orchestrator and config."""
-    with patch('gridtracer.data_processor.data_imports.osm.road_network_builder.yaml.safe_load') as mock_yaml:
+    with patch('gridtracer.data.imports.osm.road_network_builder.yaml.safe_load') as mock_yaml:
         # Mock the YAML config for osm2po_config.yaml
         mock_yaml.return_value = {
             'way_tag_resolver': {
@@ -157,7 +157,7 @@ def test_build_network(road_network_builder, mock_osm_data):
     # that returns mock_osm_data.
 
     # Mock the to_graph and ox.simplification.simplify_graph calls
-    with patch('gridtracer.data_processor.data_imports.osm.road_network_builder.ox') as mock_ox:
+    with patch('gridtracer.data.imports.osm.road_network_builder.ox') as mock_ox:
         # Mock the simplify_graph and graph_to_gdfs calls
         mock_simplified_graph = MagicMock()
         mock_ox.simplification.simplify_graph.return_value = mock_simplified_graph
@@ -201,7 +201,7 @@ def test_process_method(road_network_builder, mock_osm_data):
     # The mock_orchestrator already provides the mock OSM parser
 
     # Mock the to_graph and ox.simplification.simplify_graph calls
-    with patch('gridtracer.data_processor.data_imports.osm.road_network_builder.ox') as mock_ox:
+    with patch('gridtracer.data.imports.osm.road_network_builder.ox') as mock_ox:
         # Mock the simplify_graph and graph_to_gdfs calls
         mock_simplified_graph = MagicMock()
         mock_ox.simplification.simplify_graph.return_value = mock_simplified_graph
