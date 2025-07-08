@@ -320,36 +320,42 @@ class WorkflowOrchestrator:
         try:
             # Check if a region boundary is available
             if self.has_region_boundary():
-                boundary_gdf = self.get_region_boundary()
+                boundary_gdf = self.get_region_boundary()  # Original is in EPSG:4269
 
-                # Ensure boundary is in WGS84 (EPSG:4326) as pyrosm expects
-                if boundary_gdf.crs is None or boundary_gdf.crs.to_epsg() != 4326:
-                    self.logger.info("Re-projecting boundary to EPSG:4326 for pyrosm.")
-                    boundary_gdf = boundary_gdf.to_crs("EPSG:4326")
+                # Project to a meter-based CRS (EPSG:5070) for accurate buffering
+                self.logger.info(
+                    f"Projecting boundary from {boundary_gdf.crs} to EPSG:5070 for buffering."
+                )
+                boundary_gdf_5070 = boundary_gdf.to_crs("EPSG:5070")
 
-                # Get a single geometry for the bounding box.
-                # If multiple, use unary_union to get the overall extent.
-                if len(boundary_gdf.geometry) > 1:
-                    boundary_geometry = boundary_gdf.unary_union
-                    self.logger.info(
-                        "Multiple geometries found in boundary_gdf, "
-                        "using unary_union for OSM parser bounding box."
-                    )
-                elif len(boundary_gdf.geometry) == 1:
-                    boundary_geometry = boundary_gdf.geometry.iloc[0]
+                # Assume a single geometry entry as per system design
+                boundary_geometry_5070 = boundary_gdf_5070.geometry.iloc[0]
+
+                # Apply a 15-meter buffer in the projected CRS (EPSG:5070)
+                self.logger.info("Applying 15-meter buffer to boundary in EPSG:5070.")
+                buffered_geometry_5070 = boundary_geometry_5070.buffer(25.0)
+
+                # Create a temporary GeoDataFrame to hold the buffered geometry
+                buffered_gdf_5070 = gpd.GeoDataFrame(
+                    [buffered_geometry_5070], columns=['geometry'], crs="EPSG:5070"
+                )
+                # Reproject to WGS84 (EPSG:4326) as expected by pyrosm
+                self.logger.info("Re-projecting buffered boundary to EPSG:4326 for pyrosm.")
+                boundary_gdf_4326 = buffered_gdf_5070.to_crs("EPSG:4326")
+                final_boundary_geometry = boundary_gdf_4326.geometry.iloc[0]
 
                 # Ensure the geometry is a Polygon or MultiPolygon as expected by pyrosm
-                if not isinstance(boundary_geometry, (Polygon, MultiPolygon)):
+                if not isinstance(final_boundary_geometry, (Polygon, MultiPolygon)):
                     self.logger.error(
                         f"Boundary geometry is not a Polygon or MultiPolygon "
-                        f"(type: {type(boundary_geometry)}). "
+                        f"(type: {type(final_boundary_geometry)}). "
                         "OSM parser might not work as expected."
                     )
 
                 self.logger.info(
-                    f"Initializing pyrosm.OSM with PBF: {osm_pbf_path} and derived bounding box."
+                    f"Initializing pyrosm.OSM with PBF: {osm_pbf_path} and buffered, reprojected bounding box."
                 )
-                osm_parser = OSM(str(osm_pbf_path), bounding_box=boundary_geometry)
+                osm_parser = OSM(str(osm_pbf_path), bounding_box=final_boundary_geometry)
                 self.logger.info("pyrosm.OSM parser initialized successfully with bounding box.")
             else:
                 # No boundary set - process entire PBF file
