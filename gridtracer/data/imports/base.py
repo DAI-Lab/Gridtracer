@@ -1,5 +1,5 @@
 """
-Base class for data handlers in the gridtracer data processing pipeline.
+Base class for data handlers in THE data processing pipeline.
 
 This module provides the base DataHandler class which defines common functionality
 for downloading, processing, and saving different types of data sources.
@@ -11,12 +11,11 @@ from typing import TYPE_CHECKING, Optional
 
 import geopandas as gpd
 
-from gridtracer.config import config
+from gridtracer.config.config_loader import LOG_FILE, LOG_LEVEL
 from gridtracer.utils import create_logger
 
 if TYPE_CHECKING:
-    from gridtracer.data.workflow import (
-        WorkflowOrchestrator,)  # Forward reference for type hinting
+    from gridtracer.data.workflow import WorkflowOrchestrator
 
 
 class DataHandler(ABC):
@@ -38,13 +37,14 @@ class DataHandler(ABC):
         """
         self.orchestrator = orchestrator
         self.logger = create_logger(
-            name=f"{self.__class__.__module__}.{self.__class__.__name__}",
-            log_level=config.log_level,
-            log_file=config.log_file,
+            name=self.__class__.__name__,
+            log_level=LOG_LEVEL,
+            log_file=LOG_FILE,
         )
 
         self.dataset_name: str = self._get_dataset_name()
-        # Get the pre-created dataset-specific output directory from the orchestrator
+        # Get the pre-created dataset-specific output directory from the
+        # orchestrator
         self.dataset_output_dir: Path = self.orchestrator.get_dataset_specific_output_directory(
             self.dataset_name
         )
@@ -54,7 +54,7 @@ class DataHandler(ABC):
         )
 
     @abstractmethod
-    def _get_dataset_name(self) -> str:  # Added type hint
+    def _get_dataset_name(self) -> str:
         """
         Get the name of the dataset. This name must be one of the keys
         defined in `ALL_DATASETS` in the `WorkflowOrchestrator`.
@@ -74,7 +74,7 @@ class DataHandler(ABC):
         """
 
     @abstractmethod
-    def process(self, boundary_gdf: Optional[gpd.GeoDataFrame] = None):  # Added type hints
+    def process(self, boundary_gdf: Optional[gpd.GeoDataFrame] = None):
         """
         Process the data for the region.
 

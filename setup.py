@@ -11,6 +11,7 @@ with open('README.md', encoding='utf-8') as readme_file:
 with open('HISTORY.md', encoding='utf-8') as history_file:
     history = history_file.read()
 
+# Core dependencies moved from requirements.txt
 install_requires = [
 ]
 
@@ -56,17 +57,20 @@ setup(
     author='MIT Data To AI Lab',
     author_email='dailabmit@gmail.com',
     classifiers=[
-        'Development Status :: 2 - Pre-Alpha',
+        'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
+        'Intended Audience :: Science/Research',
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Topic :: Scientific/Engineering :: GIS',
+        'Topic :: Scientific/Engineering :: Information Analysis',
     ],
-    description='TBD',
+    description='A data preprocessing pipeline for generating georeferenced datasets for synthetic low-voltage grid infrastructure modeling in the United States.',
     extras_require={
         'test': tests_require,
         'dev': development_requires + tests_require,
@@ -77,10 +81,10 @@ setup(
     long_description=readme + '\n\n' + history,
     long_description_content_type='text/markdown',
     include_package_data=True,
-    keywords='gridtracer gridtracer Gridtracer',
+    keywords='gridtracer electrical-grid geospatial preprocessing energy-modeling',
     name='gridtracer',
     packages=find_packages(include=['gridtracer', 'gridtracer.*']),
-    python_requires='>=3.5',
+    python_requires='>=3.8',
     setup_requires=setup_requires,
     test_suite='tests',
     tests_require=tests_require,

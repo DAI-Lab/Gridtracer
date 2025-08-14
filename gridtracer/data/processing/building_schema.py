@@ -14,13 +14,18 @@ class ResidentialBuildingOutput:
     original processing column names as default.
     """
 
-    # Required fields (no default values) must come first - using original column names
-    osm_id: str  # Unique identifier
+    # Required fields (no default values) must come first - using original
+    # column names
+    osm_id: str  # Unique OSM identifier
+    c_block_id: str  # Census block identifier
+    build_id: str  # Building identifier
     area: float  # Total floor area in m²
     use: str  # Primary use - should be 'residential'
     free_walls: int  # Number of free walls
-    building_type: str  # Building typology (SFH, TH, MFH, AB)
+    build_type: str  # Building typology (SFH, TH, MFH, AB)
+    height: float  # Building height in meters
     occupants: int  # Number of occupants
+    housing_units: int  # Number of housing units
     floors: int  # Number of floors/stories
     construction_year: str  # Construction period
     geometry: object  # Building footprint geometry
@@ -44,7 +49,8 @@ class ResidentialBuildingOutput:
         return [field.name for field in dataclasses.fields(cls)]
 
     @classmethod
-    def prepare_default_output(cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    def prepare_default_output(
+            cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Prepares residential buildings data for default output format.
 
@@ -91,10 +97,14 @@ class NonResidentialBuildingOutput:
     original processing column names as default.
     """
 
-    # Required fields (no default values) must come first - using original column names
+    # Required fields (no default values) must come first - using original
+    # column names
     osm_id: str  # Unique identifier
+    c_block_id: str  # Census block identifier
+    build_id: str  # Building identifier
     area: float  # Total floor area in m²
     use: str  # Primary use (commercial, industrial, public)
+    height: float  # Building height in meters
     free_walls: int  # Number of free walls
     geometry: object  # Building footprint geometry
 
@@ -113,7 +123,8 @@ class NonResidentialBuildingOutput:
         return [field.name for field in dataclasses.fields(cls)]
 
     @classmethod
-    def prepare_default_output(cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    def prepare_default_output(
+            cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Prepares non-residential buildings data for default output format.
 

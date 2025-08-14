@@ -1,5 +1,5 @@
 """
-NREL data handler for gridtracer.
+NREL data handler
 
 This module provides functionality to process NREL residential building
 typology datasets.
@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, OrderedDict
 
 import pandas as pd
-from tqdm import tqdm
 
+from gridtracer.config.config_loader import INPUT_DATA
 from gridtracer.data.imports.base import DataHandler
 
 if TYPE_CHECKING:
@@ -42,20 +42,15 @@ class NRELDataHandler(DataHandler):
         """
         super().__init__(orchestrator)  # Call base class init with orchestrator
 
-        # Get the NREL input file path from the orchestrator (which gets it from config)
-        input_data_paths = self.orchestrator.get_input_data_paths()
         self.input_file_path: Optional[Path] = None
-        nrel_path_str = input_data_paths.get('nrel_data')
+        nrel_path_str = INPUT_DATA.get('NREL_FILE')
 
         if nrel_path_str:
             self.input_file_path = Path(nrel_path_str)
-            self.logger.info(f"NREL input file path set to: {self.input_file_path}")
         else:
             self.logger.warning(
                 "NREL input data path ('nrel_data') not found in configuration."
             )
-            # Depending on requirements, you might raise an error here if essential
-            # raise ValueError("NREL input file path ('nrel_data') required.")
 
     def _get_dataset_name(self) -> str:
         """
@@ -74,7 +69,7 @@ class NRELDataHandler(DataHandler):
         if not self._validate_inputs():
             return {"parquet_path": None, "csv_path": None}
 
-        fips = self.orchestrator.get_fips_dict()
+        fips = self.orchestrator.fips_dict
         state_fips = fips['state_fips']
         county_fips = fips['county_fips']
 
@@ -119,7 +114,8 @@ class NRELDataHandler(DataHandler):
             return result
 
         # Compute vintage distribution
-        result['vintage_distribution'] = self.compute_vintage_distribution(parquet_path)
+        result['vintage_distribution'] = self.compute_vintage_distribution(
+            parquet_path)
 
         # Load data
         try:
@@ -133,12 +129,9 @@ class NRELDataHandler(DataHandler):
     def _validate_inputs(self) -> bool:
         """Validate required inputs for NREL processing."""
         if not self.input_file_path or not self.input_file_path.exists():
-            self.logger.error(f"NREL input file not found: {self.input_file_path}")
-            return False
-
-        fips = self.orchestrator.get_fips_dict()
-        if not fips:
-            self.logger.error("FIPS dictionary not available")
+            self.logger.error(
+                f"NREL input file not found: {
+                    self.input_file_path}")
             return False
 
         return True
@@ -146,7 +139,7 @@ class NRELDataHandler(DataHandler):
     def _extract_and_save_nrel_data(self, parquet_path: Path,
                                     csv_path: Path) -> Dict[str, Optional[Path]]:
         """Extract NREL data for the region and save to files."""
-        fips = self.orchestrator.get_fips_dict()
+        fips = self.orchestrator.fips_dict
         state_fips = fips['state_fips']
         county_fips = fips['county_fips']
         region_name = f"{fips['state']}, {fips['county']}"
@@ -160,53 +153,35 @@ class NRELDataHandler(DataHandler):
         chunk_size = 100_000
 
         try:
-            # Get total lines for progress bar
-            try:
-                with open(self.input_file_path, 'r') as f:
-                    total_lines = sum(1 for _ in f) - 1
-                total_chunks = max(
-                    1, (total_lines // chunk_size) + (1 if total_lines % chunk_size > 0 else 0)
-                )
-            except Exception:
-                total_chunks = None
-                self.logger.warning("Could not determine file size for progress tracking")
-
             # Process file in chunks
-            with tqdm(
-                total=total_chunks, desc=f"Processing NREL for {region_name}", unit="chunk"
-            ) as pbar:
-                for chunk in pd.read_csv(
-                    self.input_file_path, sep="\t", chunksize=chunk_size, low_memory=False
-                ):
+            for chunk in pd.read_csv(
+                self.input_file_path, sep="\t", chunksize=chunk_size, low_memory=False
+            ):
 
-                    if 'in.county' not in chunk.columns:
-                        pbar.update(1)
-                        continue
+                if 'in.county' not in chunk.columns:
+                    continue
 
-                    # Filter for target county
-                    county_ids_no_g = chunk['in.county'].astype(str).str.removeprefix('G')
+                # Filter for target county
+                county_ids_no_g = chunk['in.county'].astype(
+                    str).str.removeprefix('G')
 
-                    state_match = pd.Series(False, index=county_ids_no_g.index)
-                    valid_state = county_ids_no_g.str.len() >= 2
-                    state_match[valid_state] = (
-                        county_ids_no_g[valid_state].str[:2] == str_state_fips
-                    )
+                state_match = pd.Series(False, index=county_ids_no_g.index)
+                valid_state = county_ids_no_g.str.len() >= 2
+                state_match[valid_state] = (
+                    county_ids_no_g[valid_state].str[:2] == str_state_fips
+                )
 
-                    county_match = pd.Series(False, index=county_ids_no_g.index)
-                    valid_county = county_ids_no_g.str.len() >= 6
-                    county_match[valid_county] = (
-                        county_ids_no_g[valid_county].str[3:6] == str_county_fips
-                    )
+                county_match = pd.Series(
+                    False, index=county_ids_no_g.index)
+                valid_county = county_ids_no_g.str.len() >= 6
+                county_match[valid_county] = (
+                    county_ids_no_g[valid_county].str[3:6] == str_county_fips
+                )
 
-                    county_chunk = chunk[state_match & county_match]
+                county_chunk = chunk[state_match & county_match]
 
-                    if not county_chunk.empty:
-                        county_data_frames.append(county_chunk)
-                        pbar.set_postfix_str(
-                            f"Found {sum(len(df) for df in county_data_frames)} total rows"
-                        )
-
-                    pbar.update(1)
+                if not county_chunk.empty:
+                    county_data_frames.append(county_chunk)
 
             # Save results if data found
             if county_data_frames:
@@ -214,14 +189,15 @@ class NRELDataHandler(DataHandler):
                 county_data.to_parquet(parquet_path, index=False)
                 county_data.to_csv(csv_path, index=False)
 
-                self.logger.info(f"Saved {len(county_data)} NREL records to {parquet_path}")
                 return {"parquet_path": parquet_path, "csv_path": csv_path}
             else:
                 self.logger.warning(f"No NREL data found for {region_name}")
                 return {"parquet_path": None, "csv_path": None}
 
         except Exception as e:
-            self.logger.error(f"Error extracting NREL data: {e}", exc_info=True)
+            self.logger.error(
+                f"Error extracting NREL data: {e}",
+                exc_info=True)
             return {"parquet_path": None, "csv_path": None}
 
     def compute_vintage_distribution(

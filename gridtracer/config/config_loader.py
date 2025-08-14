@@ -34,6 +34,11 @@ class ConfigLoader:
         self.log_level: int = self._parse_log_level()
         self.log_file: str = self._parse_log_file()
 
+        # Expose constants from config as direct attributes
+        self.EPSG: int = self.config.get('EPSG', 5070)
+        self.BUILDING_TYPE_THRESHOLDS: Dict[str, Any] = self.config.get(
+            'BUILDING_TYPE_THRESHOLDS', {})
+
         self._validate_region()
 
     def _load_config(self) -> Dict[str, Any]:
@@ -87,9 +92,9 @@ class ConfigLoader:
         Validate that the region configuration contains necessary information.
         """
         region = self.get_region()
-        if not region.get('state'):
+        if not region.get('STATE'):
             self.logger.warning("No state specified in configuration")
-        if not region.get('county'):
+        if not region.get('COUNTY'):
             self.logger.warning("No county specified in configuration")
 
     def get_region(self):
@@ -99,7 +104,7 @@ class ConfigLoader:
         Returns:
             dict: Region configuration with state, county, and count_subdivision
         """
-        return self.config.get('region', {})
+        return self.config.get('REGION', {})
 
     def get_input_data_paths(self):
         """
@@ -108,7 +113,7 @@ class ConfigLoader:
         Returns:
             dict: Dictionary of input data paths
         """
-        return self.config.get('input_data', {})
+        return self.config.get('INPUT_DATA', {})
 
     def get_output_dir(self):
         """
@@ -117,7 +122,7 @@ class ConfigLoader:
         Returns:
             str: Output directory path
         """
-        return Path(self.config.get('output_dir', 'gridtracer/output/'))
+        return Path(self.config.get('OUTPUT_DIR', 'gridtracer/output/'))
 
     def get_output_path(self, filename=None):
         """
@@ -133,9 +138,9 @@ class ConfigLoader:
 
         # Create region-based subdirectory
         region = self.get_region()
-        state = region.get('state', '')
-        county = region.get('county', '')
-        subdivision = region.get('count_subdivision', '')
+        state = region.get('STATE', '')
+        county = region.get('COUNTY', '')
+        subdivision = region.get('COUNTY_SUBDIVISION', '')
 
         # Create a path structure based on region information
         if state and county:
@@ -169,30 +174,23 @@ class ConfigLoader:
         """
         return self.config.get('processing', {})
 
-    def update_region(self, state=None, county=None, count_subdivision=None):
+    def get_epsg(self) -> int:
         """
-        Update the region configuration and save to file.
+        Get the EPSG code for spatial data.
 
-        Args:
-            state (str, optional): State abbreviation
-            county (str, optional): County name
-            count_subdivision (str, optional): County subdivision name
+        Returns:
+            int: EPSG code (default: 5070 for NAD83 / Conus Albers)
         """
-        if not any([state, county, count_subdivision]):
-            return
+        return self.EPSG
 
-        if 'region' not in self.config:
-            self.config['region'] = {}
+    def get_building_type_thresholds(self) -> Dict[str, Any]:
+        """
+        Get building type classification thresholds.
 
-        if state:
-            self.config['region']['state'] = state
-        if county:
-            self.config['region']['county'] = county
-        if count_subdivision:
-            self.config['region']['count_subdivision'] = count_subdivision
-
-        self._save_config()
-        self._validate_region()
+        Returns:
+            dict: Building type thresholds for classification
+        """
+        return self.BUILDING_TYPE_THRESHOLDS
 
     def _save_config(self):
         """
@@ -211,3 +209,13 @@ class ConfigLoader:
 # This single, pre-initialized instance should be imported by other modules
 # to ensure consistent configuration access across the application.
 config = ConfigLoader()
+
+# --- Module-level constants for convenient access ---
+# These constants are available as direct imports for backward compatibility
+EPSG = config.EPSG
+BUILDING_TYPE_THRESHOLDS = config.BUILDING_TYPE_THRESHOLDS
+LOG_LEVEL = config.log_level
+LOG_FILE = config.log_file
+REGION = config.get_region()
+INPUT_DATA = config.get_input_data_paths()
+OUTPUT_DIR = config.get_output_dir()

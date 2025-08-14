@@ -4,25 +4,54 @@
 log_level: "INFO"
 log_file: "logs/gridtracer.log"
 
+
+# EPSG code for spatial data.
+# 3035 is for Europe (ETRS89-extended / LAEA Europe)
+# 5070 is for USA (NAD83 / Conus Albers)
+EPSG: 5070
+
+
 # Region Selection is done via the official US Census Bureau FIPS codes
 # An overview can be found here: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
 # states: MA = Massachusetts, AL = Alabama, CA = California, etc.
 # counties: Autauga County, 003 = Baldwin County, etc.
 # count_subdivisions: Autaugaville CCD,
-region:
-  state: "MA" # Valid abbreviation
-  county: "Middlesex County" # Required
-  county_subdivision: "Cambridge city" # optional, if not provided, all subdivisions will be downloaded
-  lookup_url: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
+REGION:
+  STATE: "MA" 
+  COUNTY: "Middlesex County" 
+  COUNTY_SUBDIVISION: "Cambridge city" 
+  LOOKUP_URL: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
 
 # Base output directory
-output_dir: "output/"  
+OUTPUT_DIR: "output/"  
   
-input_data:
+INPUT_DATA:
   # OSM PBF file path
   # Download from https://download.geofabrik.de/ or similar source
-  osm_pbf_file: "/Users/magic-rabbit/Documents/MA-data/geofabrik_massachusetts_latest_osm.pbf"
+  OSM_PBF_FILE: "/Users/magic-rabbit/Library/Mobile Documents/com~apple~CloudDocs/01_University/06_MIT_Stay/Master_Thesis/02_Data/GridTracer/Input/geofabrik_massachusetts_latest_osm.pbf"
+  # NREL file
+  # Download from https://data.openei.org/s3_viewer?bucket=oedi-data-lake&prefix=nrel-pds-building-stock%2Fend-use-load-profiles-for-us-building-stock%2F2021%2Fresstock_tmy3_release_1%2Ftimeseries_aggregates_metadata%2F
+  NREL_FILE: "/Users/magic-rabbit/Library/Mobile Documents/com~apple~CloudDocs/01_University/06_MIT_Stay/Master_Thesis/02_Data/GridTracer/Input/NREL_Residential_typology.tsv"
 
-  # NREL data paths
-  nrel_data: "/Users/magic-rabbit/Documents/MA-data/NREL_Residential_typology.tsv"
+# BUILDING IMPORT DEFINITIONS
+# Threshold values for building type classification
+# Apartment Buildings (AB)
+# Townhouses (TH)
+# Single Family Homes (SFH)
+# Multi-Family Homes (MFH)
+
+BUILDING_TYPE_THRESHOLDS:
+  AB_MIN_FLOOR_AREA: 600  # m² - individual buildings above this area are classified as Apartment Buildings
+  AB_MIN_CLUSTER_AREA: 1000  # m² - clusters with total area above this are classified as Apartment Buildings
+  TH_MAX_FLOOR_AREA: 270  # m² - maximum floor area for Townhouse classification
+  TH_MAX_HEIGHT: 12  # m - maximum height for Townhouse classification (optional constraint)
+  SFH_MAX_FLOOR_AREA: 200  # m² - maximum floor area for Single Family Home classification
+  SFH_MAX_HEIGHT: 12  # m - maximum height for Single Family Home classification (optional constraint)
+  SFH_MAX_CLUSTER_SIZE: 2  # maximum number of buildings in cluster for SFH classification
+  TH_MIN_CLUSTER_SIZE: 3  # minimum number of buildings in cluster for Townhouse classification
+  TH_MIN_NEIGHBORS: 2  # minimum number of direct neighbors for Townhouse classification
+  MFH_MAX_FLOOR_AREA: 600  # m² - Multi-Family Homes must be below this area (catch-all category)
+
+
+
 

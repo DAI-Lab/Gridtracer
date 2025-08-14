@@ -1,36 +1,67 @@
-"""GridTracer Data Processing Pipeline
+"""GridTracer: Geospatial Data Processing Pipeline for Electrical Grid Modeling
 
-This script serves as the main entrypoint for the GridTracer data processing
-workflow. It orchestrates a series of modules to download, process, and
-integrate various geospatial datasets to model electrical grid infrastructure.
+This module provides the main execution pipeline for GridTracer, a comprehensive
+geospatial data processing framework designed for synthetic electrical grid
+infrastructure modeling in the United States.
 
-The pipeline executes the following stages in order:
-1.  **Census Data Processing:** Fetches census block and geometry data to
-    define the target region's boundary.
-2.  **NREL Data Processing:** Processes NREL RESstock/Comstock data to
-    determine building vintage distributions.
-3.  **OpenStreetMap (OSM) Data Extraction:** Downloads power infrastructure,
-    buildings, and road networks from OSM for the target region.
-4.  **Microsoft Buildings Integration:** Downloads and enriches the buildings with height data.
-5.  **Building Classification:** Combines all building data sources and applies
-    heuristics to classify buildings and estimate electrical loads.
-6.  **Routable Road Network Generation:** Builds a clean, routable road
-    network for use with pgRouting.
+The pipeline integrates multiple authoritative data sources to create detailed,
+georeferenced datasets suitable for energy system modeling, urban planning, and
+infrastructure analysis.
 
-Prerequisites:
-  - Define your region of interest in the `config.yaml` file.
+Pipeline Stages:
+    1. **Census Boundary Definition**: Establishes precise geographic scope using
+       US Census TIGER/Line data for states, counties, and subdivisions.
+
+    2. **Census Subdivision Segmentation**: Generates comprehensive subdivision
+       datasets with population and area metrics for the target region.
+
+    3. **NREL Data Integration**: Processes residential/commercial building stock
+       characteristics and vintage distributions from NREL datasets.
+
+    4. **OpenStreetMap Extraction**: Retrieves building footprints, road networks,
+       points of interest, and power infrastructure from OSM.
+
+    5. **Microsoft Buildings Enhancement**: Augments building data with high-resolution
+       footprints and height information from Microsoft's ML-derived datasets.
+
+    6. **Building Classification**: Applies energy-focused heuristics to classify
+       buildings by type and estimate electrical load characteristics.
+
+    7. **Road Network Generation**: Creates pgRouting-compatible road networks for
+       transportation and utility routing analysis.
+
+Configuration:
+    Region specification and processing parameters are defined in config.yaml:
+    - Region: state, county, optional subdivision (using FIPS codes)
+    - Data paths: OSM PBF files, NREL datasets
+    - Processing thresholds: building classification parameters
 
 Usage:
-  # Run the entire pipeline for the configured region
-  $ python -m gridtracer.scripts.main
+    As a module:
+        python -m gridtracer.scripts.main
+
+    As a script:
+        python gridtracer/scripts/main.py
+
+Output:
+    Hierarchical directory structure organized by administrative region:
+    output/{STATE}/{COUNTY}/{SUBDIVISION}/
+        ├── CENSUS/          # Boundaries and census blocks
+        ├── NREL/            # Building typology data
+        ├── OSM/             # OpenStreetMap extracts
+        ├── MICROSOFT_BUILDINGS/  # Building footprints
+        ├── BUILDINGS_OUTPUT/     # Classified buildings
+        └── STREET_NETWORK/       # Routable networks
+
+Author: MIT Data To AI Lab
+License: MIT
 """
 import time
-from typing import Any, Dict, Optional
 
-from gridtracer.config import config
+from gridtracer.config.config_loader import LOG_FILE, LOG_LEVEL
+from gridtracer.data.census_subdivision import CountySubdivisionHandler
 from gridtracer.data.imports.census import CensusDataHandler
-from gridtracer.data.imports.microsoft_buildings import (
-    MicrosoftBuildingsDataHandler,)
+from gridtracer.data.imports.microsoft_buildings import MicrosoftBuildingsDataHandler
 from gridtracer.data.imports.nrel import NRELDataHandler
 from gridtracer.data.imports.osm.osm_data_handler import OSMDataHandler
 from gridtracer.data.imports.osm.road_network_builder import RoadNetworkBuilder
@@ -40,80 +71,113 @@ from gridtracer.utils import create_logger
 
 logger = create_logger(
     name="Main",
-    log_level=config.log_level,
-    log_file=config.log_file,
+    log_level=LOG_LEVEL,
+    log_file=LOG_FILE,
 )
 
 
 def run_full_pipeline(
-    census_data: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Run the main gridtracer data processing pipeline.
+    """
+    Run the full data import pipeline for the target region.
 
-    Uses the WorkflowOrchestrator to manage the pipeline steps.
+    This function initializes the WorkflowOrchestrator, processes census data,
+    census subdivision data, NREL data, OSM data, Microsoft buildings data,
+    and building classification. It also generates a routable road network.
 
-    Args:
-        census_data: A dictionary containing pre-loaded census data,
-            including 'target_region_boundary'. If provided, the census
-            data processing step is skipped. Defaults to None.
+    Returns:
+        None
     """
     start_time = time.time()
-    logger.info("Starting gridtracer Data Processing Pipeline v2.0")
+    logger.info("Starting Data Import Pipeline for Target Region")
 
     try:
-        # # Initialize the orchestrator, loading config, setting up FIPS, and creating all output directories
+        # # Initialize the orchestrator, loading config, setting up FIPS,
+        # and creating all output directories
+        logger.info("--------------------------------")
+        logger.info("STEP 1: Initializing WorkflowOrchestrator")
+        logger.info("--------------------------------")
         orchestrator = WorkflowOrchestrator()
 
-        # --- STEP 1: REGIONAL DATA EXTRACTION & PREPARATION ---
-        logger.info("STEP 1: Regional Data Extraction & Preparation")
-
+        # --- STEP 2: Census Data Extraction & Preparation ---
+        logger.info("--------------------------------")
+        logger.info("STEP 2: Census Data Extraction & Preparation")
+        logger.info("--------------------------------")
         census_handler = CensusDataHandler(orchestrator)
         census_data = census_handler.process(plot=False)
 
-        # --- STEP 2: Process NREL Data ---
+        subcounty_segmentation_handler = CountySubdivisionHandler(
+            orchestrator=orchestrator)
+        subcounty_segmentation_handler.process(
+            state_filter=orchestrator.fips_dict['state'])
 
-        logger.info("STEP 2: Processing NREL data")
+        # --- STEP 3: Census Subdivision Segmentation ---
+        logger.info("--------------------------------")
+        logger.info("STEP 3: Census Subdivision Segmentation")
+        logger.info("--------------------------------")
         nrel_handler = NRELDataHandler(orchestrator)
         nrel_data = nrel_handler.process()
 
-        # --- STEP 3: Extract OSM Data ---
-        logger.info("STEP 3: Extracting OSM data")
+        # --- STEP 4: Extract OSM Data ---
+        logger.info("--------------------------------")
+        logger.info("STEP 4: Extracting OSM data")
+        logger.info("--------------------------------")
         osm_handler = OSMDataHandler(orchestrator)
         osm_data = osm_handler.process(plot=False)
 
-        # --- STEP 3.5: Process Microsoft Buildings Data ---
-        logger.info("STEP 3.5: Processing Microsoft Buildings data")
-        microsoft_buildings_handler = MicrosoftBuildingsDataHandler(orchestrator)
+        # --- STEP 5: Process Microsoft Buildings Data ---
+        logger.info("STEP 5: Processing Microsoft Buildings data")
+        logger.info("--------------------------------")
+        microsoft_buildings_handler = MicrosoftBuildingsDataHandler(
+            orchestrator)
         microsoft_buildings_data = microsoft_buildings_handler.process()
 
-        # # --- STEP 4: Building Classification ---
-        logger.info("STEP 4: Building Classification")
+        # # --- STEP 6: Building Classification ---
+        logger.info("--------------------------------")
+        logger.info("STEP 6: Building Classification")
+        logger.info("--------------------------------")
         building_processor = BuildingProcessor(
-            orchestrator.get_dataset_specific_output_directory("BUILDINGS_OUTPUT"))
+            orchestrator.get_dataset_specific_output_directory(
+                "BUILDINGS_OUTPUT"))
 
         building_processor.process(
-            census_data, osm_data, microsoft_buildings_data, nrel_data["vintage_distribution"])
+            census_data,
+            osm_data,
+            microsoft_buildings_data,
+            nrel_data["vintage_distribution"]
+        )
 
-        # --- STEP 5: ROUTABLE ROAD NETWORK GENERATION ---
-        logger.info("STEP 5: Routable Road Network Generation")
+        # --- STEP 7: ROUTABLE ROAD NETWORK GENERATION ---
+        logger.info("--------------------------------")
+        logger.info("STEP 7: Routable Road Network Generation")
+        logger.info("--------------------------------")
         road_network_builder = RoadNetworkBuilder(orchestrator=orchestrator)
         _ = road_network_builder.process()
 
-        logger.info("gridtracer Data Processing Pipeline v2.0 completed successfully.")
+        logger.info("--------------------------------")
+        logger.info(
+            " ✓ Data Import Pipeline for Target Region completed successfully.")
 
     except ValueError as ve:
-        logger.error(f"Configuration or validation error during pipeline: {ve}", exc_info=True)
+        logger.error(
+            f"Configuration or validation error during pipeline: {ve}",
+            exc_info=True)
     except RuntimeError as re:
-        logger.error(f"Runtime error during pipeline execution: {re}", exc_info=True)
+        logger.error(
+            f"Runtime error during pipeline execution: {re}",
+            exc_info=True)
     except Exception as e:
-        logger.error(f"An unexpected error occurred in the pipeline: {e}", exc_info=True)
+        logger.error(
+            f"An unexpected error occurred in the pipeline: {e}",
+            exc_info=True)
     finally:
         # Calculate and log total execution time
         end_time = time.time()
         total_time = end_time - start_time
 
         logger.info(
-            f"gridtracer Data Processing Pipeline completed in {total_time} seconds"
+            "Import Pipeline completed in "
+            f"{total_time} seconds"
         )
 
 

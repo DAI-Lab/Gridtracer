@@ -159,7 +159,8 @@ clean-build: ## remove build artifacts
 	rm -fr dist/
 	rm -fr .eggs/
 	find . -name '*.egg-info' -exec rm -fr {} +
-	find . -name '*.egg' -exec rm -f {} +
+	find . -path './.venv' -prune -o -name '*.egg-info' -exec rm -fr {} +
+	find . -path './.venv' -prune -o -name '*.egg' -exec rm -fr {} +
 
 .PHONY: clean-pyc
 clean-pyc: ## remove Python file artifacts
