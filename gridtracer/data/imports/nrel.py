@@ -6,7 +6,7 @@ typology datasets.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, OrderedDict
+from typing import TYPE_CHECKING, Any, Dict, Optional, OrderedDict
 
 import pandas as pd
 
@@ -21,6 +21,10 @@ EXPECTED_VINTAGE_BINS = [
     "<1940", "1940s", "1950s", "1960s", "1970s",
     "1980s", "1990s", "2000s", "2010s"
 ]
+
+CHUNK_SIZE = 100_000
+NREL_COUNTY_COLUMN = 'in.county'
+NREL_VINTAGE_COLUMN = 'in.vintage'
 
 
 class NRELDataHandler(DataHandler):
@@ -62,32 +66,21 @@ class NRELDataHandler(DataHandler):
         return "NREL"
 
     def download(self) -> Dict[str, Optional[Path]]:
-        """
-        Process local NREL file and extract data for the target region.
-        Returns paths to processed files.
-        """
+        """Get or create NREL data files for the target region."""
         if not self._validate_inputs():
             return {"parquet_path": None, "csv_path": None}
 
-        fips = self.orchestrator.fips_dict
-        state_fips = fips['state_fips']
-        county_fips = fips['county_fips']
-
-        # Define output file paths
-        filename_base = f"NREL_residential_typology_{state_fips}_{county_fips}"
-        parquet_path = self.dataset_output_dir / f"{filename_base}.parquet"
-        csv_path = self.dataset_output_dir / f"{filename_base}.csv"
+        file_paths = self._get_output_file_paths()
 
         # Check if files already exist
-        if parquet_path.exists() and csv_path.exists():
-            region_name = f"{fips['state']}, {fips['county']}"
-            self.logger.info(f"NREL files already exist for {region_name}")
-            return {"parquet_path": parquet_path, "csv_path": csv_path}
+        if self._files_exist(file_paths):
+            self._log_files_exist()
+            return file_paths
 
         # Extract data if files don't exist
-        return self._extract_and_save_nrel_data(parquet_path, csv_path)
+        return self._extract_and_save_data(file_paths)
 
-    def process(self) -> Dict[str, any]:
+    def process(self) -> Dict[str, Any]:
         """
         Process NREL data for the region with consistent output structure.
 
@@ -114,7 +107,7 @@ class NRELDataHandler(DataHandler):
             return result
 
         # Compute vintage distribution
-        result['vintage_distribution'] = self.compute_vintage_distribution(
+        result['vintage_distribution'] = self._compute_vintage_distribution(
             parquet_path)
 
         # Load data
@@ -136,74 +129,105 @@ class NRELDataHandler(DataHandler):
 
         return True
 
-    def _extract_and_save_nrel_data(self, parquet_path: Path,
-                                    csv_path: Path) -> Dict[str, Optional[Path]]:
-        """Extract NREL data for the region and save to files."""
+    def _get_output_file_paths(self) -> Dict[str, Path]:
+        """Generate output file paths based on FIPS codes."""
         fips = self.orchestrator.fips_dict
-        state_fips = fips['state_fips']
-        county_fips = fips['county_fips']
+        filename_base = f"NREL_residential_typology_{fips['state_fips']}_{fips['county_fips']}"
+
+        return {
+            "parquet_path": self.dataset_output_dir / f"{filename_base}.parquet",
+            "csv_path": self.dataset_output_dir / f"{filename_base}.csv"
+        }
+
+    def _files_exist(self, file_paths: Dict[str, Path]) -> bool:
+        """Check if both output files already exist."""
+        return (file_paths["parquet_path"].exists()
+                and file_paths["csv_path"].exists())
+
+    def _log_files_exist(self) -> None:
+        """Log that files already exist."""
+        fips = self.orchestrator.fips_dict
+        region_name = f"{fips['state']}, {fips['county']}"
+        self.logger.info(f"NREL files already exist for {region_name}")
+
+    def _extract_and_save_data(self, file_paths: Dict[str, Path]) -> Dict[str, Optional[Path]]:
+        """Extract NREL data and save to files."""
+        fips = self.orchestrator.fips_dict
         region_name = f"{fips['state']}, {fips['county']}"
 
         self.logger.info(f"Extracting NREL data for {region_name}")
 
-        str_state_fips = str(state_fips).zfill(2)
-        str_county_fips = str(county_fips).zfill(3)
-
-        county_data_frames = []
-        chunk_size = 100_000
-
         try:
-            # Process file in chunks
-            for chunk in pd.read_csv(
-                self.input_file_path, sep="\t", chunksize=chunk_size, low_memory=False
-            ):
+            county_data = self._process_file_chunks(fips['state_fips'], fips['county_fips'])
 
-                if 'in.county' not in chunk.columns:
-                    continue
-
-                # Filter for target county
-                county_ids_no_g = chunk['in.county'].astype(
-                    str).str.removeprefix('G')
-
-                state_match = pd.Series(False, index=county_ids_no_g.index)
-                valid_state = county_ids_no_g.str.len() >= 2
-                state_match[valid_state] = (
-                    county_ids_no_g[valid_state].str[:2] == str_state_fips
-                )
-
-                county_match = pd.Series(
-                    False, index=county_ids_no_g.index)
-                valid_county = county_ids_no_g.str.len() >= 6
-                county_match[valid_county] = (
-                    county_ids_no_g[valid_county].str[3:6] == str_county_fips
-                )
-
-                county_chunk = chunk[state_match & county_match]
-
-                if not county_chunk.empty:
-                    county_data_frames.append(county_chunk)
-
-            # Save results if data found
-            if county_data_frames:
-                county_data = pd.concat(county_data_frames, ignore_index=True)
-                county_data.to_parquet(parquet_path, index=False)
-                county_data.to_csv(csv_path, index=False)
-
-                return {"parquet_path": parquet_path, "csv_path": csv_path}
-            else:
+            if county_data.empty:
                 self.logger.warning(f"No NREL data found for {region_name}")
                 return {"parquet_path": None, "csv_path": None}
 
+            # Save files
+            self._save_data_files(county_data, file_paths)
+            return file_paths
+
         except Exception as e:
-            self.logger.error(
-                f"Error extracting NREL data: {e}",
-                exc_info=True)
+            self.logger.error(f"Error extracting NREL data: {e}", exc_info=True)
             return {"parquet_path": None, "csv_path": None}
 
-    def compute_vintage_distribution(
+    def _process_file_chunks(self, state_fips: str, county_fips: str) -> pd.DataFrame:
+        """Process CSV file in chunks and extract county data."""
+        county_data_frames = []
+
+        for chunk in pd.read_csv(
+            self.input_file_path, sep="\t", chunksize=CHUNK_SIZE, low_memory=False
+        ):
+            county_chunk = self._extract_county_chunk(chunk, state_fips, county_fips)
+            if not county_chunk.empty:
+                county_data_frames.append(county_chunk)
+
+        return pd.concat(county_data_frames,
+                         ignore_index=True) if county_data_frames else pd.DataFrame()
+
+    def _save_data_files(self, data: pd.DataFrame, file_paths: Dict[str, Path]) -> None:
+        """Save data to both parquet and CSV files."""
+        data.to_parquet(file_paths["parquet_path"], index=False)
+        data.to_csv(file_paths["csv_path"], index=False)
+
+    def _extract_county_chunk(self, chunk: pd.DataFrame,
+                              state_fips: str, county_fips: str) -> pd.DataFrame:
+        """Extract records matching the target county from a data chunk."""
+        if NREL_COUNTY_COLUMN not in chunk.columns:
+            return pd.DataFrame()
+
+        # Clean county IDs (remove 'G' prefix)
+        county_ids = chunk[NREL_COUNTY_COLUMN].astype(str).str.removeprefix('G')
+
+        # Create state and county filters
+        state_filter = self._create_state_filter(county_ids, state_fips)
+        county_filter = self._create_county_filter(county_ids, county_fips)
+
+        return chunk[state_filter & county_filter]
+
+    def _create_state_filter(self, county_ids: pd.Series, state_fips: str) -> pd.Series:
+        """Create boolean filter for state FIPS matching."""
+        state_match = pd.Series(False, index=county_ids.index)
+        valid_length = county_ids.str.len() >= 2
+        state_match[valid_length] = (
+            county_ids[valid_length].str[:2] == state_fips.zfill(2)
+        )
+        return state_match
+
+    def _create_county_filter(self, county_ids: pd.Series, county_fips: str) -> pd.Series:
+        """Create boolean filter for county FIPS matching."""
+        county_match = pd.Series(False, index=county_ids.index)
+        valid_length = county_ids.str.len() >= 6
+        county_match[valid_length] = (
+            county_ids[valid_length].str[3:6] == county_fips.zfill(3)
+        )
+        return county_match
+
+    def _compute_vintage_distribution(
         self,
         parquet_path: Path,
-        vintage_col: str = "in.vintage",
+        vintage_col: str = NREL_VINTAGE_COLUMN,
     ) -> OrderedDict[str, float]:
         """
         Weighted percentage distribution of NREL building‐stock 'vintage' bins.
@@ -212,7 +236,7 @@ class NRELDataHandler(DataHandler):
         ----------
         parquet_path : Path
             Path to parquet file with NREL data for the region
-        vintage_col : str, default ``"in.vintage"``
+        vintage_col : str, default ``NREL_VINTAGE_COLUMN``
             Column holding the construction-period label
         Returns
         -------
