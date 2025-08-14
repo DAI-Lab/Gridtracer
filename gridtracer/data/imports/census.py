@@ -3,9 +3,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import contextily as ctx
 import geopandas as gpd
-import matplotlib.pyplot as plt
 import pandas as pd  # For timestamp in plotting
 
 from gridtracer.config import config
@@ -60,7 +58,6 @@ class CensusDataHandler(DataHandler):
                     Path(tmp_file.name).unlink()
 
                 gdf.to_file(output_geojson_path, driver='GeoJSON')
-                self.logger.info(f"Saved to: {output_geojson_path}")
                 return gdf
             except Exception as e:
                 self.logger.error(
@@ -378,6 +375,7 @@ class CensusDataHandler(DataHandler):
                 raise ValueError(
                     "Authoritative target region boundary could not be established."
                 )
+            self.logger.info(f"Finished processing census data for the target_region")
 
             return results
         except Exception as e:
