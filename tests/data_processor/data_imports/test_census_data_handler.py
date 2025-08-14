@@ -1,5 +1,5 @@
 """
-Test suite for CensusDataHandler.
+Test module for CensusDataHandler.
 
 This module provides comprehensive tests for the CensusDataHandler class,
 covering all public and internal methods, error conditions, and integration

@@ -1,19 +1,16 @@
 """
 Comprehensive test suite for the WorkflowOrchestrator class.
 
-This module tests the core orchestration functionality including:
-- Configuration loading and validation
-- FIPS code resolution and error handling
+This module tests the core orchestration functionality based on the current
+implementation including:
+- FIPS code resolution and validation
 - Directory structure creation and management
 - Region boundary management
 - OSM parser integration
 - Error handling and edge cases
 """
 
-import logging
-import tempfile
 from pathlib import Path
-from typing import Any, Dict
 from unittest.mock import Mock, patch
 
 import geopandas as gpd
@@ -21,766 +18,506 @@ import pytest
 from shapely.geometry import Polygon
 
 from gridtracer.data.workflow import ALL_DATASETS, WorkflowOrchestrator
-
-
-@pytest.fixture
-def sample_config() -> Dict[str, Any]:
-    """Fixture providing a complete sample configuration dictionary."""
-    return {
-        'region': {
-            'state': 'MA',
-            'county': 'Middlesex County',
-            'county_subdivision': 'Cambridge city',
-            'lookup_url': (
-                'https://www2.census.gov/geo/docs/reference/codes/'
-                'files/national_cousub.txt'
-            )
-        },
-        'output_dir': 'test_output/',
-        'input_data': {
-            'osm_pbf_file': '/path/to/test.pbf',
-            'nrel_data': '/path/to/nrel.tsv',
-            'nlcd_landuse': '/path/to/landuse.tif'
-        },
-        'overpass': {
-            'api_url': 'http://overpass-api.de/api/interpreter',
-            'timeout': 500
-        },
-        'processing': {
-            'distance_threshold_meters': 10,
-            'crs': 'epsg:4326'
-        },
-        'api_keys': {
-            'census_api_key': 'test_key'
-        }
-    }
-
-
-@pytest.fixture
-def sample_fips_csv_content() -> str:
-    """Fixture providing sample FIPS lookup CSV content for testing."""
-    return """STATE,STATEFP,COUNTYFP,COUNTYNAME,COUSUB FP,COUSUBNAME,FUNCSTAT
-MA,25,017,Middlesex County,11000,Cambridge city,A
-MA,25,017,Middlesex County,22500,Somerville city,A
-MA,25,017,Middlesex County,33000,Arlington town,A
-MA,25,025,Norfolk County,12345,Boston city,A
-CA,06,001,Alameda County,54321,Oakland city,A
-"""
-
-
-@pytest.fixture
-def sample_boundary_gdf() -> gpd.GeoDataFrame:
-    """Fixture providing a sample boundary GeoDataFrame."""
-    boundary_data = {
-        'GEOID': ['25017'],
-        'NAME': ['Middlesex County'],
-        'geometry': [
-            Polygon([(-71.5, 42.3), (-71.5, 42.4), (-71.4, 42.4), (-71.4, 42.3)])
-        ]
-    }
-    return gpd.GeoDataFrame(boundary_data, crs="EPSG:4326")
-
-
-@pytest.fixture
-def sample_subdivision_boundary_gdf() -> gpd.GeoDataFrame:
-    """Fixture providing a sample subdivision boundary GeoDataFrame."""
-    boundary_data = {
-        'GEOID': ['2501711000'],
-        'NAME': ['Cambridge city'],
-        'geometry': [
-            Polygon([(-71.15, 42.35), (-71.15, 42.40), (-71.10, 42.40), (-71.10, 42.35)])
-        ]
-    }
-    return gpd.GeoDataFrame(boundary_data, crs="EPSG:4326")
-
-
-@pytest.fixture
-def temp_output_dir():
-    """Fixture providing a temporary output directory."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        yield Path(temp_dir)
-
-
-@pytest.fixture
-def mock_config_loader(sample_config, temp_output_dir):
-    """Fixture providing a mocked ConfigLoader."""
-    with patch('gridtracer.data.workflow.config') as mock_config:
-        mock_config.get_region.return_value = sample_config['region']
-        mock_config.get_output_dir.return_value = temp_output_dir
-        mock_config.get_input_data_paths.return_value = sample_config['input_data']
-        mock_config.get_overpass_config.return_value = sample_config['overpass']
-        mock_config.log_level = logging.INFO
-        mock_config.log_file = "test.log"
-        yield mock_config
-
-
-def create_mock_fips_file(filepath: Path, content: str) -> None:
-    """Helper function to create mock FIPS file."""
-    with open(filepath, 'w', encoding='latin-1') as f:
-        f.write(content)
+from tests.conftest import create_mock_fips_file
 
 
 class TestWorkflowOrchestratorInitialization:
-    """Test suite for WorkflowOrchestrator initialization."""
+    """Test suite for WorkflowOrchestrator initialization and FIPS resolution."""
 
-    @patch('urllib.request.urlretrieve')
     def test_initialization_success(
         self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
+        orchestrator_with_fips: WorkflowOrchestrator
     ):
         """Test successful initialization with valid configuration."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
+        orchestrator = orchestrator_with_fips
 
-        orchestrator = WorkflowOrchestrator()
-
+        # Check FIPS data was resolved correctly
         assert orchestrator.fips_dict is not None
         assert orchestrator.fips_dict['state'] == 'MA'
         assert orchestrator.fips_dict['county'] == 'Middlesex County'
         assert orchestrator.fips_dict['subdivision'] == 'Cambridge city'
-        assert orchestrator.is_county_subdivision is True
+        assert orchestrator.fips_dict['state_fips'] == '25'
+        assert orchestrator.fips_dict['county_fips'] == '017'
+        assert orchestrator.fips_dict['subdivision_fips'] == '11000'
 
-        # Check that output directories were created
+        # Check subdivision processing flag
+        assert orchestrator.is_county_subdivision is True
+        assert orchestrator.is_subdivision_processing() is True
+
+        # Check output directories were created
         assert orchestrator.regional_base_output_dir.exists()
+        expected_path = orchestrator.base_output_dir / "MA" / "Middlesex_County" / "Cambridge_city"
+        assert orchestrator.regional_base_output_dir == expected_path
+
+        # Check all dataset directories exist
         for dataset in ALL_DATASETS:
             dataset_path = orchestrator.regional_base_output_dir / dataset
             assert dataset_path.exists(), f"Dataset directory {dataset} was not created"
 
-    def test_initialization_without_subdivision(
+    def test_initialization_county_only(
         self,
-        mock_config_loader,
+        mock_workflow_config,
         sample_fips_csv_content,
         temp_output_dir
     ):
         """Test initialization without county subdivision."""
-        # Modify config to not include subdivision
-        region_config = mock_config_loader.get_region()
-        del region_config['county_subdivision']
+        # Create config without subdivision
+        region_without_subdivision = {
+            'STATE': 'MA',
+            'COUNTY': 'Middlesex County',
+            'LOOKUP_URL': 'https://test.com/fips.txt'
+            # No COUNTY_SUBDIVISION
+        }
 
-        with patch('urllib.request.urlretrieve') as mock_urlretrieve:
+        with patch('gridtracer.data.workflow.REGION', region_without_subdivision), \
+                patch('urllib.request.urlretrieve') as mock_urlretrieve:
+
             mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
                 Path(filepath), sample_fips_csv_content
             )
 
             orchestrator = WorkflowOrchestrator()
 
+            # Should be county-level processing
             assert orchestrator.fips_dict['subdivision'] is None
+            assert orchestrator.fips_dict['subdivision_fips'] is None
             assert orchestrator.is_county_subdivision is False
+            assert orchestrator.is_subdivision_processing() is False
 
-    def test_initialization_missing_config_parameters(self, temp_output_dir):
-        """Test initialization with missing required configuration parameters."""
-        incomplete_config = {
-            'state': 'MA',
-            # Missing county and lookup_url
-        }
+            # Directory should be county-level
+            expected_path = temp_output_dir / "MA" / "Middlesex_County"
+            assert orchestrator.regional_base_output_dir == expected_path
 
-        with patch('gridtracer.data.workflow.config') as mock_config:
-            mock_config.get_region.return_value = incomplete_config
-            mock_config.get_output_dir.return_value = temp_output_dir
-            mock_config.log_level = logging.INFO
-            mock_config.log_file = "test.log"
-
-            with pytest.raises(
-                ValueError,
-                match="State, county, and lookup_url must be provided"
-            ):
-                WorkflowOrchestrator()
-
-
-class TestFIPSCodeResolution:
-    """Test suite for FIPS code resolution functionality."""
-
-    @patch('urllib.request.urlretrieve')
-    def test_fips_resolution_success(
+    def test_initialization_missing_required_config(
         self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
+        mock_workflow_config,
         temp_output_dir
     ):
-        """Test successful FIPS code resolution."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        orchestrator = WorkflowOrchestrator()
-
-        expected_fips = {
-            'state': 'MA',
-            'state_fips': '25',
-            'county': 'Middlesex County',
-            'county_fips': '017',
-            'subdivision': 'Cambridge city',
-            'subdivision_fips': '11000',
-            'funcstat': 'A'
+        """Test initialization with missing required configuration parameters."""
+        incomplete_region = {
+            'STATE': 'MA',
+            # Missing COUNTY and LOOKUP_URL
         }
 
-        assert orchestrator.fips_dict == expected_fips
+        with patch('gridtracer.data.workflow.REGION', incomplete_region):
+            with pytest.raises(ValueError, match="State, county, and lookup_url must be provided"):
+                WorkflowOrchestrator()
 
-    @patch('urllib.request.urlretrieve')
     def test_fips_resolution_invalid_state(
         self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
+        mock_workflow_config,
         temp_output_dir
     ):
         """Test FIPS resolution with invalid state."""
-        # Modify config to use invalid state
-        region_config = mock_config_loader.get_region()
-        region_config['state'] = 'XX'  # Invalid state
-
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        with pytest.raises(ValueError, match="State abbreviation 'XX' not found"):
-            WorkflowOrchestrator()
-
-    @patch('urllib.request.urlretrieve')
-    def test_fips_resolution_invalid_county(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test FIPS resolution with invalid county."""
-        # Modify config to use invalid county
-        region_config = mock_config_loader.get_region()
-        region_config['county'] = 'Nonexistent County'
-
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        with pytest.raises(ValueError, match="County 'Nonexistent County' not found"):
-            WorkflowOrchestrator()
-
-    @patch('urllib.request.urlretrieve')
-    def test_fips_resolution_invalid_subdivision(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test FIPS resolution with invalid subdivision."""
-        # Modify config to use invalid subdivision
-        region_config = mock_config_loader.get_region()
-        region_config['county_subdivision'] = 'Nonexistent city'
-
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        with pytest.raises(ValueError, match="Subdivision 'Nonexistent city' not found"):
-            WorkflowOrchestrator()
-
-    @patch('urllib.request.urlretrieve')
-    def test_fips_file_download_failure(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        temp_output_dir
-    ):
-        """Test handling of FIPS file download failure."""
-        mock_urlretrieve.side_effect = Exception("Download failed")
-
-        with pytest.raises(Exception, match="Download failed"):
-            WorkflowOrchestrator()
-
-    @patch('urllib.request.urlretrieve')
-    def test_fips_csv_parsing_with_inconsistent_rows(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        temp_output_dir
-    ):
-        """Test FIPS CSV parsing with inconsistent row lengths."""
-        # CSV content with some 8-column rows that need merging
-        inconsistent_csv = (
-            "STATE,STATEFP,COUNTYFP,COUNTYNAME,COUSUB FP,COUSUBNAME,FUNCSTAT\n"
-            "MA,25,017,Middlesex County,11000,Cambridge,city,A\n"
-            "MA,25,017,Middlesex County,22500,Somerville city,A\n"
-        )
-
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), inconsistent_csv
-        )
-
-        # Should handle the 8-column row by merging columns 5 and 6
-        orchestrator = WorkflowOrchestrator()
-        assert orchestrator.fips_dict['subdivision'] == 'Cambridge city'
-
-
-class TestDirectoryManagement:
-    """Test suite for directory management functionality."""
-
-    @patch('urllib.request.urlretrieve')
-    def test_output_directory_creation(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test creation of output directory structure."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        orchestrator = WorkflowOrchestrator()
-
-        # Check regional directory structure
-        expected_path = temp_output_dir / "MA" / "Middlesex_County" / "Cambridge_city"
-        assert orchestrator.regional_base_output_dir == expected_path
-        assert expected_path.exists()
-
-        # Check that all dataset directories were created
-        for dataset in ALL_DATASETS:
-            dataset_dir = expected_path / dataset
-            assert dataset_dir.exists(), f"Dataset directory {dataset} missing"
-
-    @patch('urllib.request.urlretrieve')
-    def test_get_dataset_specific_directory(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test getting dataset-specific output directories."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        orchestrator = WorkflowOrchestrator()
-
-        # Test valid dataset names
-        for dataset in ALL_DATASETS:
-            dataset_dir = orchestrator.get_dataset_specific_output_directory(dataset)
-            expected_path = orchestrator.regional_base_output_dir / dataset
-            assert dataset_dir == expected_path
-            assert dataset_dir.exists()
-
-    @patch('urllib.request.urlretrieve')
-    def test_get_dataset_specific_directory_invalid(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test error handling for invalid dataset names."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        orchestrator = WorkflowOrchestrator()
-
-        with pytest.raises(ValueError, match="Unknown dataset name: INVALID"):
-            orchestrator.get_dataset_specific_output_directory("INVALID")
-
-
-class TestRegionBoundaryManagement:
-    """Test suite for region boundary management."""
-
-    @patch('urllib.request.urlretrieve')
-    def test_set_and_get_region_boundary(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        sample_boundary_gdf,
-        temp_output_dir
-    ):
-        """Test setting and getting region boundary."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        orchestrator = WorkflowOrchestrator()
-
-        # Initially should raise error
-        with pytest.raises(ValueError, match="Region boundary has not been set yet"):
-            orchestrator.get_region_boundary()
-
-        # Set boundary
-        orchestrator.set_region_boundary(sample_boundary_gdf)
-
-        # Should now return the boundary
-        retrieved_boundary = orchestrator.get_region_boundary()
-        assert isinstance(retrieved_boundary, gpd.GeoDataFrame)
-        assert len(retrieved_boundary) == len(sample_boundary_gdf)
-
-    @patch('urllib.request.urlretrieve')
-    def test_region_boundary_subdivision_status(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test subdivision processing status."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        orchestrator = WorkflowOrchestrator()
-
-        assert orchestrator.is_subdivision_processing() is True
-
-        # Test without subdivision
-        region_config = mock_config_loader.get_region()
-        del region_config['county_subdivision']
-
-        orchestrator2 = WorkflowOrchestrator()
-        assert orchestrator2.is_subdivision_processing() is False
-
-
-class TestOSMParserIntegration:
-    """Test suite for OSM parser integration."""
-
-    @patch('pathlib.Path.exists')
-    @patch('gridtracer.data.workflow.OSM')
-    def test_osm_parser_initialization_success(
-        self,
-        mock_osm_class,
-        mock_path_exists,
-        mock_config_loader,
-        sample_fips_csv_content,
-        sample_boundary_gdf,
-        temp_output_dir
-    ):
-        """Test successful OSM parser initialization."""
-        # Pre-create the FIPS file so no download is needed
-        fips_file_path = temp_output_dir / "national_cousub.txt"
-        create_mock_fips_file(fips_file_path, sample_fips_csv_content)
-
-        # Mock Path.exists to return True for all files during test
-        mock_path_exists.return_value = True
-
-        mock_osm_instance = Mock()
-        mock_osm_class.return_value = mock_osm_instance
-
-        orchestrator = WorkflowOrchestrator()
-        orchestrator.set_region_boundary(sample_boundary_gdf)
-
-        # Get OSM parser (should initialize lazily)
-        parser = orchestrator.get_osm_parser()
-
-        assert parser is not None
-        assert parser == mock_osm_instance
-        mock_osm_class.assert_called_once()
-
-    @patch('urllib.request.urlretrieve')
-    @patch('pathlib.Path.exists')
-    def test_osm_parser_missing_pbf_file(
-        self,
-        mock_path_exists,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        sample_boundary_gdf,
-        temp_output_dir
-    ):
-        """Test OSM parser initialization with missing PBF file."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-        mock_path_exists.return_value = False  # PBF file doesn't exist
-
-        orchestrator = WorkflowOrchestrator()
-        orchestrator.set_region_boundary(sample_boundary_gdf)
-
-        # Should return None when PBF file doesn't exist
-        parser = orchestrator.get_osm_parser()
-        assert parser is None
-
-    @patch('pathlib.Path.exists')
-    @patch('gridtracer.data.workflow.OSM')
-    def test_osm_parser_boundary_projection(
-        self,
-        mock_osm_class,
-        mock_path_exists,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test OSM parser with boundary projection to WGS84."""
-        # Pre-create the FIPS file so no download is needed
-        fips_file_path = temp_output_dir / "national_cousub.txt"
-        create_mock_fips_file(fips_file_path, sample_fips_csv_content)
-
-        # Mock Path.exists to return True for all files during test
-        mock_path_exists.return_value = True
-
-        # Create boundary in different CRS
-        boundary_data = {
-            'GEOID': ['25017'],
-            'NAME': ['Middlesex County'],
-            'geometry': [
-                Polygon([
-                    (200000, 900000), (200000, 950000),
-                    (250000, 950000), (250000, 900000)
-                ])
-            ]
-        }
-        boundary_gdf = gpd.GeoDataFrame(boundary_data, crs="EPSG:3857")  # Web Mercator
-
-        mock_osm_instance = Mock()
-        mock_osm_class.return_value = mock_osm_instance
-
-        orchestrator = WorkflowOrchestrator()
-        orchestrator.set_region_boundary(boundary_gdf)
-
-        parser = orchestrator.get_osm_parser()
-
-        # Should have called OSM with projected geometry
-        assert parser is not None
-        mock_osm_class.assert_called_once()
-
-    @patch('pathlib.Path.exists')
-    @patch('gridtracer.data.workflow.OSM')
-    def test_osm_parser_multiple_geometries(
-        self,
-        mock_osm_class,
-        mock_path_exists,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test OSM parser with multiple boundary geometries."""
-        # Pre-create the FIPS file so no download is needed
-        fips_file_path = temp_output_dir / "national_cousub.txt"
-        create_mock_fips_file(fips_file_path, sample_fips_csv_content)
-
-        # Mock Path.exists to return True for all files during test
-        mock_path_exists.return_value = True
-
-        # Create boundary with multiple geometries
-        boundary_data = {
-            'GEOID': ['25017A', '25017B'],
-            'NAME': ['Part A', 'Part B'],
-            'geometry': [
-                Polygon([(-71.5, 42.3), (-71.5, 42.35), (-71.45, 42.35), (-71.45, 42.3)]),
-                Polygon([(-71.45, 42.3), (-71.45, 42.35), (-71.4, 42.35), (-71.4, 42.3)])
-            ]
-        }
-        boundary_gdf = gpd.GeoDataFrame(boundary_data, crs="EPSG:4326")
-
-        mock_osm_instance = Mock()
-        mock_osm_class.return_value = mock_osm_instance
-
-        orchestrator = WorkflowOrchestrator()
-        orchestrator.set_region_boundary(boundary_gdf)
-
-        parser = orchestrator.get_osm_parser()
-
-        assert parser is not None
-        mock_osm_class.assert_called_once()
-
-
-class TestConfigurationAccess:
-    """Test suite for configuration access methods."""
-
-    @patch('urllib.request.urlretrieve')
-    def test_configuration_access_methods(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test all configuration access methods."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        orchestrator = WorkflowOrchestrator()
-
-        # Test region config access
-        region_config = orchestrator.get_region_config()
-        assert region_config['state'] == 'MA'
-        assert region_config['county'] == 'Middlesex County'
-
-        # Test input data paths access
-        input_paths = orchestrator.get_input_data_paths()
-        assert 'osm_pbf_file' in input_paths
-        assert 'nrel_data' in input_paths
-
-        # Test overpass config access
-        overpass_config = orchestrator.get_overpass_config()
-        assert 'api_url' in overpass_config
-        assert 'timeout' in overpass_config
-
-        # Test FIPS dict access
-        fips_dict = orchestrator.get_fips_dict()
-        assert fips_dict is not None
-        assert fips_dict['state'] == 'MA'
-
-    @patch('urllib.request.urlretrieve')
-    def test_base_output_directory_access(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test base output directory access."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        orchestrator = WorkflowOrchestrator()
-
-        base_dir = orchestrator.get_base_output_directory()
-        assert isinstance(base_dir, Path)
-        assert base_dir.exists()
-
-
-class TestErrorHandling:
-    """Test suite for error handling scenarios."""
-
-    def test_uninitialized_boundary_access(self, mock_config_loader, temp_output_dir):
-        """Test error when accessing unset region boundary."""
-        with patch('urllib.request.urlretrieve') as mock_urlretrieve:
-            mock_urlretrieve.side_effect = Exception("Should not be called")
-
-            # Mock the entire initialization process
-            with patch.object(WorkflowOrchestrator, '_initialize_orchestrator'):
-                orchestrator = WorkflowOrchestrator()
-                # Manually set the attributes that would be set during initialization
-                orchestrator.fips_dict = {
-                    'state': 'MA', 'county': 'Test', 'subdivision': None
-                }
-                orchestrator.regional_base_output_dir = temp_output_dir
-                orchestrator.is_county_subdivision = False
-                orchestrator.region_boundary_gdf = None  # This should remain None for the test
-
-                with pytest.raises(ValueError, match="Region boundary has not been set yet"):
-                    orchestrator.get_region_boundary()
-
-    @patch('urllib.request.urlretrieve')
-    def test_deprecated_path_method_warning(
-        self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        temp_output_dir
-    ):
-        """Test deprecated path construction method issues warning."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
-
-        orchestrator = WorkflowOrchestrator()
-
-        with pytest.warns(DeprecationWarning, match="get_path_in_output_dir is deprecated"):
-            path = orchestrator.get_path_in_output_dir("test", "subdir")
-            assert isinstance(path, Path)
-
-
-class TestIntegrationScenarios:
-    """Test suite for integration scenarios."""
-
-    @patch('urllib.request.urlretrieve')
-    def test_full_workflow_county_level(
-        self,
-        mock_urlretrieve,
-        temp_output_dir,
-        sample_boundary_gdf
-    ):
-        """Test complete workflow for county-level processing."""
-        # Create config without subdivision
-        config_without_subdivision = {
-            'region': {
-                'state': 'MA',
-                'county': 'Middlesex County',
-                'lookup_url': 'https://test.com/fips.txt'
-            },
-            'output_dir': str(temp_output_dir),
-            'input_data': {
-                'osm_pbf_file': '/test/file.pbf'
-            },
-            'overpass': {'api_url': 'http://test.com', 'timeout': 300}
-        }
-
         fips_content = (
             "STATE,STATEFP,COUNTYFP,COUNTYNAME,COUSUB FP,COUSUBNAME,FUNCSTAT\n"
             "MA,25,017,Middlesex County,11000,Cambridge city,A\n"
         )
 
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), fips_content
+        invalid_region = {
+            'STATE': 'XX',  # Invalid state
+            'COUNTY': 'Middlesex County',
+            'LOOKUP_URL': 'https://test.com/fips.txt'
+        }
+
+        with patch('gridtracer.data.workflow.REGION', invalid_region), \
+                patch('urllib.request.urlretrieve') as mock_urlretrieve:
+
+            mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
+                Path(filepath), fips_content
+            )
+
+            with pytest.raises(ValueError, match="State abbreviation 'XX' not found"):
+                WorkflowOrchestrator()
+
+    def test_fips_resolution_invalid_county(
+        self,
+        mock_workflow_config,
+        temp_output_dir
+    ):
+        """Test FIPS resolution with invalid county."""
+        fips_content = (
+            "STATE,STATEFP,COUNTYFP,COUNTYNAME,COUSUB FP,COUSUBNAME,FUNCSTAT\n"
+            "MA,25,017,Middlesex County,11000,Cambridge city,A\n"
         )
 
-        with patch('gridtracer.data.workflow.config') as mock_config:
-            mock_config.get_region.return_value = config_without_subdivision['region']
-            mock_config.get_output_dir.return_value = Path(
-                config_without_subdivision['output_dir']
+        invalid_region = {
+            'STATE': 'MA',
+            'COUNTY': 'Nonexistent County',  # Invalid county
+            'LOOKUP_URL': 'https://test.com/fips.txt'
+        }
+
+        with patch('gridtracer.data.workflow.REGION', invalid_region), \
+                patch('urllib.request.urlretrieve') as mock_urlretrieve:
+
+            mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
+                Path(filepath), fips_content
             )
-            mock_config.get_input_data_paths.return_value = (
-                config_without_subdivision['input_data']
+
+            with pytest.raises(ValueError, match="County 'Nonexistent County' not found"):
+                WorkflowOrchestrator()
+
+    def test_fips_file_download_failure(
+        self,
+        mock_workflow_config
+    ):
+        """Test handling of FIPS file download failure."""
+        with patch('urllib.request.urlretrieve') as mock_urlretrieve:
+            mock_urlretrieve.side_effect = Exception("Download failed")
+
+            with pytest.raises(Exception, match="Download failed"):
+                WorkflowOrchestrator()
+
+    def test_fips_csv_parsing_inconsistent_rows(
+        self,
+        mock_workflow_config,
+        temp_output_dir
+    ):
+        """Test FIPS CSV parsing with inconsistent row lengths."""
+        # CSV with 8-column row that needs merging
+        inconsistent_csv = (
+            "STATE,STATEFP,COUNTYFP,COUNTYNAME,COUSUB FP,COUSUBNAME,FUNCSTAT\n"
+            "MA,25,017,Middlesex County,11000,Cambridge,city,A\n"
+        )
+
+        with patch('urllib.request.urlretrieve') as mock_urlretrieve:
+            mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
+                Path(filepath), inconsistent_csv
             )
-            mock_config.get_overpass_config.return_value = (
-                config_without_subdivision['overpass']
+
+            orchestrator = WorkflowOrchestrator()
+            # Should handle the 8-column row by merging columns 5 and 6
+            assert orchestrator.fips_dict['subdivision'] == 'Cambridge city'
+
+
+class TestDirectoryManagement:
+    """Test suite for directory management functionality."""
+
+    def test_dataset_directory_creation(
+        self,
+        orchestrator_with_fips: WorkflowOrchestrator
+    ):
+        """Test creation of dataset-specific directories."""
+        orchestrator = orchestrator_with_fips
+
+        # Test all valid dataset names
+        for dataset in ALL_DATASETS:
+            dataset_dir = orchestrator.get_dataset_specific_output_directory(dataset)
+
+            expected_path = orchestrator.regional_base_output_dir / dataset
+            assert dataset_dir == expected_path
+            assert dataset_dir.exists()
+
+    def test_invalid_dataset_name(
+        self,
+        orchestrator_with_fips: WorkflowOrchestrator
+    ):
+        """Test error handling for invalid dataset names."""
+        orchestrator = orchestrator_with_fips
+
+        with pytest.raises(ValueError, match="Unknown dataset name: INVALID"):
+            orchestrator.get_dataset_specific_output_directory("INVALID")
+
+    def test_directory_structure_county_level(
+        self,
+        mock_workflow_config,
+        sample_fips_csv_content,
+        temp_output_dir
+    ):
+        """Test directory structure for county-level processing."""
+        region_county_only = {
+            'STATE': 'MA',
+            'COUNTY': 'Middlesex County',
+            'LOOKUP_URL': 'https://test.com/fips.txt'
+        }
+
+        with patch('gridtracer.data.workflow.REGION', region_county_only), \
+                patch('urllib.request.urlretrieve') as mock_urlretrieve:
+
+            mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
+                Path(filepath), sample_fips_csv_content
             )
-            mock_config.log_level = logging.INFO
-            mock_config.log_file = "test.log"
 
             orchestrator = WorkflowOrchestrator()
 
-            # Verify county-level setup
-            assert orchestrator.is_subdivision_processing() is False
-            assert orchestrator.fips_dict['subdivision'] is None
-
-            # Test boundary management
-            orchestrator.set_region_boundary(sample_boundary_gdf)
-            retrieved = orchestrator.get_region_boundary()
-            assert len(retrieved) == len(sample_boundary_gdf)
-
-            # Test directory structure
+            # Should create county-level path structure
             expected_path = temp_output_dir / "MA" / "Middlesex_County"
             assert orchestrator.regional_base_output_dir == expected_path
+            assert expected_path.exists()
 
-    @patch('urllib.request.urlretrieve')
-    def test_full_workflow_subdivision_level(
+            # All dataset directories should exist
+            for dataset in ALL_DATASETS:
+                dataset_dir = expected_path / dataset
+                assert dataset_dir.exists()
+
+
+class TestRegionBoundaryManagement:
+    """Test suite for region boundary management."""
+
+    def test_boundary_not_set_initially(
         self,
-        mock_urlretrieve,
-        mock_config_loader,
-        sample_fips_csv_content,
-        sample_subdivision_boundary_gdf,
+        orchestrator_with_fips: WorkflowOrchestrator
+    ):
+        """Test that boundary is not set initially."""
+        orchestrator = orchestrator_with_fips
+
+        assert orchestrator.has_region_boundary() is False
+
+        with pytest.raises(ValueError, match="Region boundary has not been set yet"):
+            orchestrator.get_region_boundary()
+
+    def test_set_and_get_region_boundary(
+        self,
+        orchestrator_with_fips: WorkflowOrchestrator,
+        sample_region_boundary: gpd.GeoDataFrame
+    ):
+        """Test setting and getting region boundary."""
+        orchestrator = orchestrator_with_fips
+
+        # Set boundary
+        orchestrator.set_region_boundary(sample_region_boundary)
+
+        # Should now be available
+        assert orchestrator.has_region_boundary() is True
+
+        retrieved_boundary = orchestrator.get_region_boundary()
+        assert isinstance(retrieved_boundary, gpd.GeoDataFrame)
+        assert len(retrieved_boundary) == len(sample_region_boundary)
+        assert retrieved_boundary.crs == sample_region_boundary.crs
+
+    def test_boundary_overwrite(
+        self,
+        orchestrator_with_fips: WorkflowOrchestrator,
+        sample_region_boundary: gpd.GeoDataFrame
+    ):
+        """Test overwriting existing boundary."""
+        orchestrator = orchestrator_with_fips
+
+        # Set initial boundary
+        orchestrator.set_region_boundary(sample_region_boundary)
+
+        # Create a different boundary
+        new_boundary_data = {
+            'GEOID': ['different'],
+            'NAME': ['Different Region'],
+            'geometry': [
+                Polygon([(-72.0, 43.0), (-72.0, 43.1), (-71.9, 43.1), (-71.9, 43.0)])
+            ]
+        }
+        new_boundary = gpd.GeoDataFrame(new_boundary_data, crs="EPSG:4326")
+
+        # Overwrite boundary
+        orchestrator.set_region_boundary(new_boundary)
+
+        # Should return new boundary
+        retrieved = orchestrator.get_region_boundary()
+        assert len(retrieved) == 1
+        assert retrieved.iloc[0]['NAME'] == 'Different Region'
+
+
+class TestOSMParserIntegration:
+    """Test suite for OSM parser integration."""
+
+    def test_osm_parser_initialization_with_boundary(
+        self,
+        orchestrator_with_fips: WorkflowOrchestrator,
+        sample_region_boundary: gpd.GeoDataFrame,
+        mock_osm_parser
+    ):
+        """Test OSM parser initialization with boundary."""
+        orchestrator = orchestrator_with_fips
+        orchestrator.set_region_boundary(sample_region_boundary)
+
+        # Mock Path.exists to return True for PBF file
+        with patch('pathlib.Path.exists', return_value=True):
+            parser = orchestrator.get_osm_parser()
+
+            assert parser is not None
+            assert parser == mock_osm_parser
+
+    def test_osm_parser_missing_pbf_file(
+        self,
+        orchestrator_with_fips: WorkflowOrchestrator,
+        sample_region_boundary: gpd.GeoDataFrame
+    ):
+        """Test OSM parser when PBF file is missing."""
+        orchestrator = orchestrator_with_fips
+        orchestrator.set_region_boundary(sample_region_boundary)
+
+        # Mock Path.exists to return False for PBF file
+        with patch('pathlib.Path.exists', return_value=False):
+            parser = orchestrator.get_osm_parser()
+
+            assert parser is None
+
+    def test_osm_parser_without_boundary(
+        self,
+        orchestrator_with_fips: WorkflowOrchestrator,
+        mock_osm_parser
+    ):
+        """Test OSM parser initialization without boundary."""
+        orchestrator = orchestrator_with_fips
+
+        # Mock Path.exists to return True for PBF file
+        with patch('pathlib.Path.exists', return_value=True):
+            parser = orchestrator.get_osm_parser()
+
+            assert parser is not None
+            assert parser == mock_osm_parser
+
+    def test_osm_parser_lazy_loading(
+        self,
+        orchestrator_with_fips: WorkflowOrchestrator,
+        mock_osm_parser
+    ):
+        """Test that OSM parser is lazily loaded."""
+        orchestrator = orchestrator_with_fips
+
+        # Initially should be None
+        assert orchestrator._osm_parser is None
+
+        with patch('pathlib.Path.exists', return_value=True):
+            # First call should initialize
+            parser1 = orchestrator.get_osm_parser()
+            assert parser1 is not None
+
+            # Second call should return same instance
+            parser2 = orchestrator.get_osm_parser()
+            assert parser2 is parser1
+
+    def test_osm_parser_initialization_error(
+        self,
+        orchestrator_with_fips: WorkflowOrchestrator,
+        sample_region_boundary: gpd.GeoDataFrame
+    ):
+        """Test OSM parser initialization error handling."""
+        orchestrator = orchestrator_with_fips
+        orchestrator.set_region_boundary(sample_region_boundary)
+
+        with patch('pathlib.Path.exists', return_value=True), \
+                patch('gridtracer.data.workflow.OSM', side_effect=Exception("OSM init failed")):
+
+            parser = orchestrator.get_osm_parser()
+            assert parser is None
+
+
+class TestErrorHandling:
+    """Test suite for error handling scenarios."""
+
+    def test_malformed_fips_file(
+        self,
+        mock_workflow_config,
         temp_output_dir
     ):
-        """Test complete workflow for subdivision-level processing."""
-        mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
-            Path(filepath), sample_fips_csv_content
-        )
+        """Test handling of malformed FIPS file."""
+        malformed_csv = "invalid,csv,content\n"
 
-        orchestrator = WorkflowOrchestrator()
+        with patch('urllib.request.urlretrieve') as mock_urlretrieve:
+            mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
+                Path(filepath), malformed_csv
+            )
 
-        # Verify subdivision-level setup
-        assert orchestrator.is_subdivision_processing() is True
-        assert orchestrator.fips_dict['subdivision'] == 'Cambridge city'
-        assert orchestrator.fips_dict['subdivision_fips'] == '11000'
+            with pytest.raises(ValueError, match="Failed to lookup FIPS codes"):
+                WorkflowOrchestrator()
 
-        # Test boundary management
-        orchestrator.set_region_boundary(sample_subdivision_boundary_gdf)
-        retrieved = orchestrator.get_region_boundary()
-        assert len(retrieved) == len(sample_subdivision_boundary_gdf)
+    def test_empty_fips_file(
+        self,
+        mock_workflow_config,
+        temp_output_dir
+    ):
+        """Test handling of empty FIPS file."""
+        empty_csv = ""
 
-        # Test directory structure includes subdivision
-        expected_path = temp_output_dir / "MA" / "Middlesex_County" / "Cambridge_city"
-        assert orchestrator.regional_base_output_dir == expected_path
+        with patch('urllib.request.urlretrieve') as mock_urlretrieve:
+            mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
+                Path(filepath), empty_csv
+            )
 
-        # Test all dataset directories exist
-        for dataset in ALL_DATASETS:
-            dataset_dir = orchestrator.get_dataset_specific_output_directory(dataset)
-            assert dataset_dir.exists()
-            assert dataset_dir == expected_path / dataset
+            with pytest.raises(ValueError, match="Failed to lookup FIPS codes"):
+                WorkflowOrchestrator()
+
+
+class TestIntegrationScenarios:
+    """Test suite for integration scenarios mimicking real usage."""
+
+    def test_typical_data_handler_workflow(
+        self,
+        orchestrator_with_fips: WorkflowOrchestrator,
+        sample_region_boundary: gpd.GeoDataFrame
+    ):
+        """Test typical workflow as used by data handlers."""
+        orchestrator = orchestrator_with_fips
+
+        # 1. Check FIPS data is available (as CensusDataHandler would)
+        assert orchestrator.fips_dict is not None
+        assert 'state_fips' in orchestrator.fips_dict
+        assert 'county_fips' in orchestrator.fips_dict
+
+        # 2. Get dataset-specific directory (as any DataHandler would)
+        census_dir = orchestrator.get_dataset_specific_output_directory("CENSUS")
+        assert census_dir.exists()
+        assert census_dir.name == "CENSUS"
+
+        # 3. Set region boundary (as CensusDataHandler would)
+        orchestrator.set_region_boundary(sample_region_boundary)
+        assert orchestrator.has_region_boundary()
+
+        # 4. Get OSM parser (as OSMDataHandler would)
+        with patch('pathlib.Path.exists', return_value=True), \
+                patch('gridtracer.data.workflow.OSM') as mock_osm:
+            mock_osm.return_value = Mock()
+            parser = orchestrator.get_osm_parser()
+            assert parser is not None
+
+    def test_subdivision_vs_county_processing(
+        self,
+        mock_workflow_config,
+        sample_fips_csv_content,
+        temp_output_dir
+    ):
+        """Test the difference between subdivision and county processing."""
+
+        # Test subdivision processing
+        region_with_subdivision = {
+            'STATE': 'MA',
+            'COUNTY': 'Middlesex County',
+            'COUNTY_SUBDIVISION': 'Cambridge city',
+            'LOOKUP_URL': 'https://test.com/fips.txt'
+        }
+
+        with patch('gridtracer.data.workflow.REGION', region_with_subdivision), \
+                patch('urllib.request.urlretrieve') as mock_urlretrieve:
+
+            mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
+                Path(filepath), sample_fips_csv_content
+            )
+
+            orchestrator_subdivision = WorkflowOrchestrator()
+
+            assert orchestrator_subdivision.is_subdivision_processing() is True
+            assert orchestrator_subdivision.fips_dict['subdivision'] == 'Cambridge city'
+
+            expected_path = temp_output_dir / "MA" / "Middlesex_County" / "Cambridge_city"
+            assert orchestrator_subdivision.regional_base_output_dir == expected_path
+
+        # Test county-only processing
+        region_county_only = {
+            'STATE': 'MA',
+            'COUNTY': 'Middlesex County',
+            'LOOKUP_URL': 'https://test.com/fips.txt'
+        }
+
+        with patch('gridtracer.data.workflow.REGION', region_county_only), \
+                patch('urllib.request.urlretrieve') as mock_urlretrieve:
+
+            mock_urlretrieve.side_effect = lambda url, filepath: create_mock_fips_file(
+                Path(filepath), sample_fips_csv_content
+            )
+
+            orchestrator_county = WorkflowOrchestrator()
+
+            assert orchestrator_county.is_subdivision_processing() is False
+            assert orchestrator_county.fips_dict['subdivision'] is None
+
+            expected_path = temp_output_dir / "MA" / "Middlesex_County"
+            assert orchestrator_county.regional_base_output_dir == expected_path
