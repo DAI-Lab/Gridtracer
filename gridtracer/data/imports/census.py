@@ -108,14 +108,15 @@ class CensusDataHandler(DataHandler):
         }
 
         specific_subdivision_gdf: Optional[gpd.GeoDataFrame] = None
-
+        self.logger.info(f"Processing Census data for {fips['state']} - {fips['county']} - {fips['subdivision']}")
+        
         # 1. Process County Subdivisions (COUSUB) - if it's a subdivision run
         if is_subdivision_run and target_subdiv_fips:
             subdivision_url = f"https://www2.census.gov/geo/tiger/TIGER2020/COUSUB/tl_2020_{state_fips}_cousub.zip"
             all_county_subdivisions_gdf = self._download_and_read_census_shp(
                 subdivision_url,
                 # Suffix for clarity
-                filename_prefix=f"{state_fips}_{county_fips}_all_subdivisions_ref"
+                filename_prefix=f"{state_fips}_{county_fips}_all_subdivisions"
             )
 
             if all_county_subdivisions_gdf is not None and not all_county_subdivisions_gdf.empty:
@@ -128,13 +129,7 @@ class CensusDataHandler(DataHandler):
                     ].copy()
 
                     if not specific_subdivision_gdf.empty:
-                        # Save this specific subdivision boundary for reference
-                        subdiv_boundary_ref_path = self.dataset_output_dir / \
-                            f"{state_fips}_{county_fips}_{target_subdiv_fips}_subdivision_boundary_ref.geojson"
-                        specific_subdivision_gdf.to_file(
-                            subdiv_boundary_ref_path, driver='GeoJSON')
-                        self.logger.info(
-                            f"Reference file for target subdivision boundary saved: {subdiv_boundary_ref_path}")
+                        self.logger.debug(f"Found target subdivision: {target_subdiv_fips}")
                     else:
                         self.logger.warning(
                             f"Target subdivision FIPS {target_subdiv_fips} not found in county {county_fips}.")
@@ -151,7 +146,7 @@ class CensusDataHandler(DataHandler):
         all_blocks_in_county_gdf = self._download_and_read_census_shp(
             blocks_url,
             # Suffix for clarity
-            filename_prefix=f"{state_fips}_{county_fips}_all_county_blocks_ref"
+            filename_prefix=f"{state_fips}_{county_fips}_all_county_blocks"
         )
 
         processed_target_blocks_gdf: Optional[gpd.GeoDataFrame] = None
@@ -175,25 +170,8 @@ class CensusDataHandler(DataHandler):
                 raise ValueError(
                     f"No blocks found for county FIPS {county_fips}.")
 
-            # Save the boundary of ALL blocks in the county (full county
-            # extent) for reference
-            try:
-                if county_blocks_gdf_filtered.crs is None:
-                    self.logger.warning(
-                        "Full county blocks GDF has no CRS. Cannot reliably create its boundary reference.")
-                else:
-                    full_county_extent_geom = county_blocks_gdf_filtered.geometry.unary_union
-                    full_county_extent_gdf = gpd.GeoDataFrame(
-                        geometry=[full_county_extent_geom], crs=county_blocks_gdf_filtered.crs)
-                    full_county_extent_ref_path = self.dataset_output_dir / \
-                        f"{state_fips}_{county_fips}_full_county_extent_ref.geojson"
-                    full_county_extent_gdf.to_file(
-                        full_county_extent_ref_path, driver='GeoJSON')
-
-            except Exception as e:
-                self.logger.warning(
-                    f"Could not save full county extent reference boundary: {e}",
-                    exc_info=True)
+            # County blocks loaded and filtered successfully
+            self.logger.debug(f"Loaded {len(county_blocks_gdf_filtered)} blocks for county {county_fips}")
 
             clipping_boundary_for_blocks: Optional[gpd.GeoDataFrame] = None
             if is_subdivision_run and specific_subdivision_gdf is not None and not specific_subdivision_gdf.empty:
