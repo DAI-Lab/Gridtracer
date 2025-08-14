@@ -1,7 +1,7 @@
 import tempfile
 import urllib.request
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import contextily as ctx
 import geopandas as gpd
@@ -181,7 +181,7 @@ class CensusDataHandler(DataHandler):
                 len(county_blocks_gdf_filtered)} blocks for county {county_fips}")
         return county_blocks_gdf_filtered
 
-    def download(self) -> Dict[str, any]:
+    def download(self) -> Dict[str, Any]:
         """
         Downloads and processes Census data for the specified region.
 
@@ -214,120 +214,6 @@ class CensusDataHandler(DataHandler):
             'county_blocks_gdf': county_blocks_gdf_filtered,
             'fips': fips
         }
-
-    def _visualize_census_data(
-        self,
-        blocks_gdf: gpd.GeoDataFrame,
-        boundary_to_plot_gdf: Optional[gpd.GeoDataFrame] = None,
-        plot_title_override: Optional[str] = None
-    ) -> Optional[str]:
-        """
-        Visualize census blocks on a map with their individual boundaries.
-        If boundary_to_plot_gdf is provided, its boundary will be overlaid.
-
-        Args:
-            blocks_gdf (GeoDataFrame): GeoDataFrame containing census blocks to plot.
-                                     These should be the blocks relevant to the current scope
-                                     (e.g., subdivision blocks or all county blocks).
-            boundary_to_plot_gdf (Optional[gpd.GeoDataFrame]): GeoDataFrame whose boundary
-                                                             will be drawn on the plot. This could
-                                                             be a specific subdivision or the whole county boundary.
-            plot_title_override (Optional[str]): Optional title for the plot. If None,
-                                                 a title is generated based on FIPS info.
-        Returns:
-            Optional[str]: Path to the saved plot file, or None if plotting failed.
-        """
-        if blocks_gdf is None or blocks_gdf.empty:
-            self.logger.error("No blocks provided to _visualize_census_data.")
-            return None
-
-        self.logger.info(f"Visualizing {len(blocks_gdf)} census blocks.")
-
-        fips = self.orchestrator.fips_dict
-
-        plot_output_dir = self.orchestrator.regional_base_output_dir / "PLOTS"
-
-        # Determine plot title
-        title = plot_title_override
-        if title is None:
-            # Use the name from the boundary_to_plot_gdf if available and it's a subdivision
-            # Otherwise, use the FIPS info from the orchestrator.
-            if self.orchestrator.is_subdivision_processing() and \
-               boundary_to_plot_gdf is not None and not boundary_to_plot_gdf.empty and \
-               'NAME' in boundary_to_plot_gdf.columns:
-                title = f"Census Blocks in {
-                    boundary_to_plot_gdf.iloc[0]['NAME']}"
-            elif self.orchestrator.is_subdivision_processing() and fips.get('subdivision'):
-                title = f"Census Blocks in {fips['subdivision']}"
-            else:
-                title = f"Census Blocks in {fips['county']}, {fips['state']}"
-
-        # Create figure and axis
-        _, ax = plt.subplots(figsize=(15, 15))
-
-        # Convert to Web Mercator for basemap compatibility
-        blocks_mercator = blocks_gdf.to_crs(epsg=3857)
-        # Define initial bounds from blocks
-        current_plot_bounds = list(blocks_mercator.total_bounds)
-
-        # Plot blocks
-        blocks_mercator.plot(
-            ax=ax,
-            alpha=0.2,
-            edgecolor='red',
-            facecolor='skyblue',
-            linewidth=1.0)
-
-        # Plot the provided boundary if it exists
-        if boundary_to_plot_gdf is not None and not boundary_to_plot_gdf.empty:
-            boundary_mercator = boundary_to_plot_gdf.to_crs(epsg=3857)
-            boundary_mercator.plot(
-                ax=ax,
-                facecolor='none',
-                edgecolor='green',
-                linewidth=2.0,
-                linestyle='--')
-
-            # Update overall plot bounds to ensure the boundary is visible
-            specific_boundary_bounds = list(boundary_mercator.total_bounds)
-            current_plot_bounds = [
-                min(current_plot_bounds[0], specific_boundary_bounds[0]),
-                min(current_plot_bounds[1], specific_boundary_bounds[1]),
-                max(current_plot_bounds[2], specific_boundary_bounds[2]),
-                max(current_plot_bounds[3], specific_boundary_bounds[3])
-            ]
-
-        # Add basemap
-        try:
-            ctx.add_basemap(
-                ax,
-                source=ctx.providers.CartoDB.Positron,
-                zoom='auto',
-                crs="EPSG:3857",
-                attribution_size=8)
-        except Exception as e:
-            self.logger.warning(
-                f"Could not add basemap for census blocks plot: {e}")
-
-        ax.set_xlim(current_plot_bounds[0], current_plot_bounds[2])
-        ax.set_ylim(current_plot_bounds[1], current_plot_bounds[3])
-        plt.title(title, pad=20, fontsize=16)
-        ax.set_axis_off()
-
-        timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-        safe_title = title.replace(" ", "_").replace(",", "").lower()
-        output_file = plot_output_dir / f"{safe_title}_{timestamp}.png"
-
-        try:
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            return str(output_file)
-        except Exception as e:
-            self.logger.error(
-                f"Failed to save census blocks plot: {e}",
-                exc_info=True)
-            return None
-        finally:
-            plt.close()
 
     def clip_and_filter_data(
         self,
@@ -419,7 +305,7 @@ class CensusDataHandler(DataHandler):
 
         return authoritative_boundary_gdf
 
-    def process(self, plot: bool = False) -> Dict[str, any]:
+    def process(self) -> Dict[str, Any]:
         """
         Processes Census data: downloads, filters, sets the region boundary,
         and optionally visualizes the census blocks.
@@ -451,7 +337,7 @@ class CensusDataHandler(DataHandler):
             )
 
             # Prepare results
-            results: Dict[str, any] = {
+            results: Dict[str, Any] = {
                 'target_region_blocks': None,
                 'target_region_blocks_filepath': None,
                 'target_region_boundary': None,
@@ -492,21 +378,6 @@ class CensusDataHandler(DataHandler):
                 raise ValueError(
                     "Authoritative target region boundary could not be established."
                 )
-
-            # Handle plotting
-            if plot:
-                blocks_for_plot = results.get('target_region_blocks')
-                boundary_to_draw = results.get('target_region_boundary')
-
-                if blocks_for_plot is not None and not blocks_for_plot.empty:
-                    self._visualize_census_data(
-                        blocks_gdf=blocks_for_plot,
-                        boundary_to_plot_gdf=boundary_to_draw
-                    )
-                else:
-                    self.logger.warning(
-                        "Skipping census blocks visualization as no blocks data is available."
-                    )
 
             return results
         except Exception as e:

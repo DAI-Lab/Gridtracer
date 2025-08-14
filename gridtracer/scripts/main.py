@@ -104,7 +104,7 @@ def run_full_pipeline(
         logger.info("STEP 2: Census Data Extraction & Preparation")
         logger.info("--------------------------------")
         census_handler = CensusDataHandler(orchestrator)
-        census_data = census_handler.process(plot=False)
+        census_data = census_handler.process()
 
         subcounty_segmentation_handler = CountySubdivisionHandler(
             orchestrator=orchestrator)
