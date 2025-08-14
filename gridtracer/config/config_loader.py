@@ -38,6 +38,7 @@ class ConfigLoader:
         self.EPSG: int = self.config.get('EPSG', 5070)
         self.BUILDING_TYPE_THRESHOLDS: Dict[str, Any] = self.config.get(
             'BUILDING_TYPE_THRESHOLDS', {})
+        self.CENSUS_URLS: Dict[str, str] = self.config.get('CENSUS_URLS', {})
 
         self._validate_region()
 
@@ -192,6 +193,15 @@ class ConfigLoader:
         """
         return self.BUILDING_TYPE_THRESHOLDS
 
+    def get_census_urls(self) -> Dict[str, str]:
+        """
+        Get Census TIGER data URLs.
+
+        Returns:
+            dict: Census URLs configuration
+        """
+        return self.CENSUS_URLS
+
     def _save_config(self):
         """
         Save the current configuration to the YAML file.
@@ -214,6 +224,7 @@ config = ConfigLoader()
 # These constants are available as direct imports for backward compatibility
 EPSG = config.EPSG
 BUILDING_TYPE_THRESHOLDS = config.BUILDING_TYPE_THRESHOLDS
+CENSUS_URLS = config.CENSUS_URLS
 LOG_LEVEL = config.log_level
 LOG_FILE = config.log_file
 REGION = config.get_region()

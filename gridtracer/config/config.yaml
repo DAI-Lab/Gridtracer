@@ -1,16 +1,5 @@
 # YAML file for configuration
 
-# LOGGING
-log_level: "INFO"
-log_file: "logs/gridtracer.log"
-
-
-# EPSG code for spatial data.
-# 3035 is for Europe (ETRS89-extended / LAEA Europe)
-# 5070 is for USA (NAD83 / Conus Albers)
-EPSG: 5070
-
-
 # Region Selection is done via the official US Census Bureau FIPS codes
 # An overview can be found here: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
 # states: MA = Massachusetts, AL = Alabama, CA = California, etc.
@@ -22,9 +11,7 @@ REGION:
   COUNTY_SUBDIVISION: "Cambridge city" 
   LOOKUP_URL: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
 
-# Base output directory
-OUTPUT_DIR: "output/"  
-  
+# Input data file paths - UPDATE THESE PATHS FOR YOUR DATA
 INPUT_DATA:
   # OSM PBF file path
   # Download from https://download.geofabrik.de/ or similar source
@@ -33,13 +20,29 @@ INPUT_DATA:
   # Download from https://data.openei.org/s3_viewer?bucket=oedi-data-lake&prefix=nrel-pds-building-stock%2Fend-use-load-profiles-for-us-building-stock%2F2021%2Fresstock_tmy3_release_1%2Ftimeseries_aggregates_metadata%2F
   NREL_FILE: "/Users/magic-rabbit/Library/Mobile Documents/com~apple~CloudDocs/01_University/06_MIT_Stay/Master_Thesis/02_Data/GridTracer/Input/NREL_Residential_typology.tsv"
 
+# Base output directory
+OUTPUT_DIR: "output/"  
+
+# EPSG code for spatial data.
+# 3035 is for Europe (ETRS89-extended / LAEA Europe)
+# 5070 is for USA (NAD83 / Conus Albers)
+EPSG: 5070
+
+# US Census TIGER data URLs
+CENSUS_URLS:
+  BASE_URL: "https://www2.census.gov/geo/tiger/TIGER2020"
+  YEAR: "2020"
+
+# LOGGING
+log_level: "INFO"
+log_file: "logs/gridtracer.log"
+
 # BUILDING IMPORT DEFINITIONS
 # Threshold values for building type classification
 # Apartment Buildings (AB)
 # Townhouses (TH)
 # Single Family Homes (SFH)
 # Multi-Family Homes (MFH)
-
 BUILDING_TYPE_THRESHOLDS:
   AB_MIN_FLOOR_AREA: 600  # m² - individual buildings above this area are classified as Apartment Buildings
   AB_MIN_CLUSTER_AREA: 1000  # m² - clusters with total area above this are classified as Apartment Buildings
@@ -51,7 +54,3 @@ BUILDING_TYPE_THRESHOLDS:
   TH_MIN_CLUSTER_SIZE: 3  # minimum number of buildings in cluster for Townhouse classification
   TH_MIN_NEIGHBORS: 2  # minimum number of direct neighbors for Townhouse classification
   MFH_MAX_FLOOR_AREA: 600  # m² - Multi-Family Homes must be below this area (catch-all category)
-
-
-
-
