@@ -4,13 +4,13 @@ import contextily as ctx
 import geopandas as gpd
 import matplotlib.pyplot as plt
 
-from gridtracer.config import config
+from gridtracer.config.config_loader import LOG_FILE, LOG_LEVEL
 from gridtracer.utils import create_logger
 
 logger = create_logger(
     name="PlotRoadNetwork",
-    log_level=config.log_level,
-    log_file=config.log_file,
+    log_level=LOG_LEVEL,
+    log_file=LOG_FILE,
 )
 
 

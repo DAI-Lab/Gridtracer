@@ -34,8 +34,8 @@ CENSUS_URLS:
   YEAR: "2020"
 
 # LOGGING
-log_level: "INFO"
-log_file: "logs/gridtracer.log"
+LOG_LEVEL: "INFO"
+LOG_FILE: "logs/gridtracer.log"
 
 # BUILDING IMPORT DEFINITIONS
 # Threshold values for building type classification
