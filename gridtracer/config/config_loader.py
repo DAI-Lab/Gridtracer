@@ -67,7 +67,7 @@ class ConfigLoader:
             int: The logging level (e.g., logging.INFO, logging.DEBUG).
                  Defaults to logging.INFO if not specified or invalid.
         """
-        log_level_str = self.config.get("log_level", "INFO").upper()
+        log_level_str = self.config.get("LOG_LEVEL", "INFO").upper()
         level = getattr(logging, log_level_str, None)
 
         if not isinstance(level, int):
@@ -86,7 +86,7 @@ class ConfigLoader:
         Returns:
             str: The path to the log file.
         """
-        return self.config.get('log_file', 'log.txt')
+        return self.config.get('LOG_FILE', 'log.txt')
 
     def _validate_region(self):
         """
@@ -125,56 +125,6 @@ class ConfigLoader:
         """
         return Path(self.config.get('OUTPUT_DIR', 'gridtracer/output/'))
 
-    def get_output_path(self, filename=None):
-        """
-        Get the output path, optionally with a filename appended.
-
-        Args:
-            filename (str, optional): Filename to append to the output directory
-
-        Returns:
-            str: Output path
-        """
-        output_dir = self.get_output_dir()
-
-        # Create region-based subdirectory
-        region = self.get_region()
-        state = region.get('STATE', '')
-        county = region.get('COUNTY', '')
-        subdivision = region.get('COUNTY_SUBDIVISION', '')
-
-        # Create a path structure based on region information
-        if state and county:
-            subdirectory = f"{state}/{county.replace(' ', '_')}"
-            if subdivision:
-                subdirectory = f"{subdirectory}/{subdivision.replace(' ', '_')}"
-            output_dir = os.path.join(output_dir, subdirectory)
-
-        # Ensure the directory exists
-        os.makedirs(output_dir, exist_ok=True)
-
-        if filename:
-            return os.path.join(output_dir, filename)
-        return output_dir
-
-    def get_overpass_config(self):
-        """
-        Get Overpass API configuration.
-
-        Returns:
-            dict: Overpass API configuration
-        """
-        return self.config.get('overpass', {})
-
-    def get_processing_params(self):
-        """
-        Get processing parameters.
-
-        Returns:
-            dict: Processing parameters
-        """
-        return self.config.get('processing', {})
-
     def get_epsg(self) -> int:
         """
         Get the EPSG code for spatial data.
@@ -201,18 +151,6 @@ class ConfigLoader:
             dict: Census URLs configuration
         """
         return self.CENSUS_URLS
-
-    def _save_config(self):
-        """
-        Save the current configuration to the YAML file.
-        """
-        try:
-            with open(self.config_path, 'w') as f:
-                yaml.dump(self.config, f, default_flow_style=False)
-                self.logger.info(f"Saved configuration to {self.config_path}")
-        except Exception as e:
-            self.logger.error(f"Error saving configuration: {str(e)}")
-            raise
 
 
 # --- Singleton Instance ---
