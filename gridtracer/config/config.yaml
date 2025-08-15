@@ -49,6 +49,8 @@ MSFT_BUILD_FOOTPRINTS:
 # Single Family Homes (SFH)
 # Multi-Family Homes (MFH)
 BUILDING_TYPE_THRESHOLDS:
+  MAX_RESIDENTIAL_FLOOR_AREA: 1000  # m² - maximum floor area for residential buildings
+  RESIDENTIAL_FLOOR_HEIGHT: 2.5  # m - height of a floor for residential buildings
   AB_MIN_FLOOR_AREA: 600  # m² - individual buildings above this area are classified as Apartment Buildings
   AB_MIN_CLUSTER_AREA: 1000  # m² - clusters with total area above this are classified as Apartment Buildings
   TH_MAX_FLOOR_AREA: 270  # m² - maximum floor area for Townhouse classification

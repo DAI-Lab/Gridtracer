@@ -1636,30 +1636,29 @@ class BuildingProcessor:
             f"After floors parsing: {after_floors_parsing} buildings have floor data (+{after_floors_parsing - initial_floors_count})")
 
         # Handle cases where we have height but no floors - estimate floors from
-        # height (2.5m per floor)
         height_no_floors_mask = (
             buildings_with_height_floors['height'].notna()) & (
             buildings_with_height_floors['floors'].isna())  # Fixed mask logic
 
         if height_no_floors_mask.any():
-            # Estimate floors using 2.5m per floor
-            estimated_floors = buildings_with_height_floors.loc[height_no_floors_mask, 'height'] / 2.5
+            # Estimate floors using residential floor height
+            estimated_floors = buildings_with_height_floors.loc[height_no_floors_mask,
+                                                                'height'] / BUILDING_TYPE_THRESHOLDS['RESIDENTIAL_FLOOR_HEIGHT']
             buildings_with_height_floors.loc[height_no_floors_mask, 'floors'] = estimated_floors.apply(
                 lambda x: max(1, int(round(x))))
             self.logger.info(
                 f"Estimated floors from height for {height_no_floors_mask.sum()} buildings")
 
         # Handle cases where we have floors but no height - estimate height from
-        # floors (2.5m per floor)
         floors_no_height_mask = (
             buildings_with_height_floors['height'].isna()) & (
             buildings_with_height_floors['floors'].notna())  # Fixed mask logic
 
         if floors_no_height_mask.any():
-            # Estimate height using 2.5m per floor
+            # Estimate height using residential floor height
             buildings_with_height_floors.loc[floors_no_height_mask,
                                              'height'] = buildings_with_height_floors.loc[floors_no_height_mask,
-                                                                                          'floors'] * 2.5
+                                                                                          'floors'] * BUILDING_TYPE_THRESHOLDS['RESIDENTIAL_FLOOR_HEIGHT']
             self.logger.info(
                 f"Estimated height from floors for {floors_no_height_mask.sum()} buildings")
 
@@ -1842,8 +1841,8 @@ class BuildingProcessor:
             # Calculate floors with validation
             floors = (
                 osm_stats['avg_height']
-                / 2.5).round().astype(int).clip(
-                lower=1)  # Using 2.5m as requested
+                / BUILDING_TYPE_THRESHOLDS['RESIDENTIAL_FLOOR_HEIGHT']).round().astype(int).clip(
+                lower=1)  # Using residential floor height
             buildings_with_ms_height.loc[osm_building_indices,
                                          'floors'] = floors
 
