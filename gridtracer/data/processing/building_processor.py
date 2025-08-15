@@ -828,15 +828,9 @@ class BuildingProcessor:
             lambda idx: neighbors_dict.get(idx, [])
         )
 
-        # Calculate free walls (assuming max 4 walls per building)
-        buildings_with_walls["free_walls"] = 4
-        for index, row in buildings_with_walls.iterrows():
-            neighbor_count = len(row["neighbors"])
-            if neighbor_count < 4:
-                buildings_with_walls.at[index,
-                                        'free_walls'] = 4 - neighbor_count
-            else:
-                buildings_with_walls.at[index, 'free_walls'] = 0
+        # Calculate free walls
+        neighbor_counts = buildings_with_walls['neighbors'].apply(len)
+        buildings_with_walls['free_walls'] = (4 - neighbor_counts).clip(lower=0)
 
         self.logger.info(
             f"Free walls calculation complete:\n{buildings_with_walls['free_walls'].value_counts(dropna=False)}")
@@ -930,27 +924,36 @@ class BuildingProcessor:
         --------
         dict : Mapping of building index to list of neighbor indices
         """
-        neighbors_dict = {}
+        
+        try:
+            # Self-join to find touching buildings
+            touching_pairs = gpd.sjoin(
+                buildings, buildings,
+                how='inner',
+                predicate='touches',
+                lsuffix='_left',
+                rsuffix='_right'
+            )
 
-        # Use spatial index for efficient neighbor detection
-        spatial_index = buildings.sindex
+            # Group by left index to create neighbors dict
+            neighbors_dict = {}
+            if not touching_pairs.empty:
+                # Group right indices by left index
+                grouped = touching_pairs.groupby(touching_pairs.index)['index__right'].apply(list)
+                neighbors_dict = grouped.to_dict()
 
-        for idx, building in buildings.iterrows():
-            # Get potential neighbors from spatial index
-            possible_matches_index = list(
-                spatial_index.intersection(
-                    building.geometry.bounds))
-            possible_matches = buildings.iloc[possible_matches_index]
+            # Ensure all buildings have an entry (even if no neighbors)
+            for idx in buildings.index:
+                if idx not in neighbors_dict:
+                    neighbors_dict[idx] = []
 
-            # Check which buildings actually touch
-            touching = possible_matches[
-                possible_matches.geometry.touches(building.geometry)
-            ].index.tolist()
+            self.logger.debug(
+                f"Found {sum(len(neighbors) for neighbors in neighbors_dict.values())} neighbor relationships")
+            return neighbors_dict
 
-            # Remove self from neighbors
-            neighbors_dict[idx] = [n for n in touching if n != idx]
-
-        return neighbors_dict
+        except Exception as e:
+            self.logger.error(f"Vectorized neighbor detection failed: {e}")
+            raise RuntimeError(f"Neighbor detection failed: {e}") from e
 
     def _expand_to_clusters(
             self, neighbors_dict: Dict[int, List[int]]) -> Dict[int, set]:
