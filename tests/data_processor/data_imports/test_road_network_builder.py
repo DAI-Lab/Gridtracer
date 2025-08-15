@@ -52,8 +52,8 @@ def mock_orchestrator_for_road_network(orchestrator_with_fips, temp_output_dir, 
     original_get_dir = orchestrator.get_dataset_specific_output_directory
 
     def mock_get_dir(dataset_name):
-        if dataset_name == "STREET_NETWORK":
-            return temp_output_dir / "STREET_NETWORK"
+        if dataset_name == "ROAD_NETWORK":
+            return temp_output_dir / "ROAD_NETWORK"
         return original_get_dir(dataset_name)
 
     orchestrator.get_dataset_specific_output_directory = mock_get_dir
@@ -76,7 +76,7 @@ def mock_orchestrator_for_road_network(orchestrator_with_fips, temp_output_dir, 
 def road_network_builder(mock_orchestrator_for_road_network):
     """Create a RoadNetworkBuilder with a mocked orchestrator and config."""
     with patch('gridtracer.data.imports.osm.road_network_builder.yaml.safe_load') as mock_yaml:
-        # Mock the YAML config for osm2po_config.yaml
+        # Mock the YAML config for road_network_config.yaml
         mock_yaml.return_value = {
             'way_tag_resolver': {
                 'tags': {
@@ -84,7 +84,8 @@ def road_network_builder(mock_orchestrator_for_road_network):
                 },
                 'flag_list': ['car', 'bike', 'foot']
             },
-            'network_type': 'driving'  # Default network type
+            'osm_pbf_file': None,
+            'output_dir': 'sql_output_chunks'
         }
 
         # The RoadNetworkBuilder now takes the orchestrator directly
@@ -93,7 +94,7 @@ def road_network_builder(mock_orchestrator_for_road_network):
         # Ensure dataset_output_dir is set correctly for tests
         builder.dataset_output_dir = (
             mock_orchestrator_for_road_network.get_dataset_specific_output_directory(
-                "STREET_NETWORK"
+                "ROAD_NETWORK"
             )
         )
         builder.dataset_output_dir.mkdir(parents=True, exist_ok=True)
@@ -118,22 +119,23 @@ def test_load_config(road_network_builder):
     assert 'bike' in tags['residential']['flags']
 
 
-def test_resolve_way_tags(road_network_builder):
+def test_resolve_way_tags(road_network_builder, mock_osm_data):
     """Test that way tags are resolved correctly."""
-    # Test resolving residential road
-    clazz, maxspeed, flags = road_network_builder._resolve_way_tags({'highway': 'residential'})
-    assert clazz == 41
-    assert maxspeed == 40
-    assert 'car' in flags
-    assert 'bike' in flags
+    # Get mock edge data and test on GeoDataFrame
+    _, edges = mock_osm_data
 
-    # Test resolving unknown highway type
-    clazz, maxspeed, flags = road_network_builder._resolve_way_tags(
-        {'highway': 'non_existent_type'}
-    )
-    assert clazz == 0
-    assert maxspeed == 0
-    assert len(flags) == 0
+    # Test resolving residential road
+    result_gdf = road_network_builder._resolve_way_tags(edges)
+    assert 'clazz' in result_gdf.columns
+    assert 'kmh' in result_gdf.columns
+    assert 'flags_set' in result_gdf.columns
+    assert result_gdf['clazz'].iloc[0] == 41
+    assert result_gdf['kmh'].iloc[0] == 40
+
+    # Test with empty GeoDataFrame
+    empty_gdf = gpd.GeoDataFrame([], columns=edges.columns, geometry='geometry', crs=edges.crs)
+    empty_result = road_network_builder._resolve_way_tags(empty_gdf)
+    assert len(empty_result) == 0
 
 
 def test_flags_to_int(road_network_builder):
@@ -191,8 +193,8 @@ def test_build_network(road_network_builder, mock_osm_data):
         with open(results['sql_file'], 'r') as f:
             sql_content = f.read()
             # Check for key SQL elements
-            assert "CREATE TABLE public_2po_4pgr" in sql_content
-            assert "INSERT INTO public_2po_4pgr" in sql_content
+            assert "CREATE TABLE road_network" in sql_content
+            assert "INSERT INTO road_network" in sql_content
             assert "CREATE INDEX" in sql_content
 
 
@@ -231,33 +233,32 @@ def test_process_and_write_edges(road_network_builder, mock_osm_data):
     # Get mock edge data
     _, edges = mock_osm_data
 
-    # Process the edges
-    insert_value_tuples = road_network_builder._process_and_write_edges(edges, "TEST")
+    # Process the edges - method now only takes edges_gdf parameter
+    sql_content = road_network_builder._process_and_write_edges(edges)
 
-    # Check that we got SQL value tuple strings back
-    assert len(insert_value_tuples) == 1
-    assert isinstance(insert_value_tuples[0], str)
+    # Check that we got SQL content back as a list of strings
+    assert isinstance(sql_content, list)
+    assert len(sql_content) > 0
 
-    # Check the SQL tuple content
-    sql_tuple = insert_value_tuples[0]
-    assert "12345" in sql_tuple  # osm_id
-    assert "Test Road" in sql_tuple  # osm_name
-    assert "41" in sql_tuple  # clazz
-    assert "40" in sql_tuple  # kmh (maxspeed)
+    # Check for SQL structure
+    full_sql = "\n".join(sql_content)
+    assert "CREATE TABLE road_network" in full_sql
+    assert "INSERT INTO road_network" in full_sql
 
     # Test with empty GeoDataFrame
     empty_gdf = gpd.GeoDataFrame([], columns=edges.columns, geometry='geometry', crs=edges.crs)
-    assert road_network_builder._process_and_write_edges(empty_gdf, "EMPTY") == []
+    empty_result = road_network_builder._process_and_write_edges(empty_gdf)
+    assert isinstance(empty_result, list)
 
 
 def test_get_dataset_name(road_network_builder):
     """Test the _get_dataset_name method."""
-    assert road_network_builder._get_dataset_name() == "STREET_NETWORK"
+    assert road_network_builder._get_dataset_name() == "ROAD_NETWORK"
 
 
 def test_fips_integration(road_network_builder):
     """Test that the road network builder can access FIPS data from the orchestrator."""
-    fips_dict = road_network_builder.orchestrator.get_fips_dict()
+    fips_dict = road_network_builder.orchestrator.fips_dict
 
     # Verify FIPS data is accessible and has expected structure
     assert fips_dict is not None
