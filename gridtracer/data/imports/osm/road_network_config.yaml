@@ -1,17 +1,12 @@
-# Configuration for the Python osm2po-like parser
+# Configuration inspired by the osm2po implementation for the Python parser
 
-# --- Way Tag Resolver Settings (mimics wtr.* in osm2po.config) ---
+# --- Way Tag Resolver Settings ---
 way_tag_resolver:
-  # List of flags used (corresponds to wtr.flagList)
-  # These are used to generate bitmasks or check permissions.
   flag_list:
     - car
     - bike
     - foot
-    - rail
-    - ferry
-    - poly # Flag to identify polygons if processed together
-
+  
   # Structure: highway_type: {priority, clazz, maxspeed, flags: [list_of_flags]}
   tags:
     motorway:       { priority: 1, clazz: 11, maxspeed: 120, flags: ["car"] }
