@@ -120,7 +120,6 @@ class OSMDataHandler(DataHandler):
             orchestrator (WorkflowOrchestrator): The workflow orchestrator instance.
         """
         super().__init__(orchestrator)
-        self.orchestrator = orchestrator
 
     def _get_dataset_name(self) -> str:
         """
