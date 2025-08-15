@@ -39,6 +39,7 @@ class ConfigLoader:
         self.BUILDING_TYPE_THRESHOLDS: Dict[str, Any] = self.config.get(
             'BUILDING_TYPE_THRESHOLDS', {})
         self.CENSUS_URLS: Dict[str, str] = self.config.get('CENSUS_URLS', {})
+        self.MSFT_BUILD_FOOTPRINTS: Dict[str, str] = self.config.get('MSFT_BUILD_FOOTPRINTS', {})
 
         self._validate_region()
 
@@ -152,6 +153,15 @@ class ConfigLoader:
         """
         return self.CENSUS_URLS
 
+    def get_msft_build_footprints_urls(self) -> Dict[str, str]:
+        """
+        Get Microsoft Building Footprints data URLs.
+
+        Returns:
+            dict: Microsoft Buildings URLs configuration
+        """
+        return self.MSFT_BUILD_FOOTPRINTS
+
 
 # --- Singleton Instance ---
 # This single, pre-initialized instance should be imported by other modules
@@ -163,6 +173,7 @@ config = ConfigLoader()
 EPSG = config.EPSG
 BUILDING_TYPE_THRESHOLDS = config.BUILDING_TYPE_THRESHOLDS
 CENSUS_URLS = config.CENSUS_URLS
+MSFT_BUILD_FOOTPRINTS = config.MSFT_BUILD_FOOTPRINTS
 LOG_LEVEL = config.log_level
 LOG_FILE = config.log_file
 REGION = config.get_region()

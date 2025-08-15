@@ -37,6 +37,11 @@ CENSUS_URLS:
 LOG_LEVEL: "INFO"
 LOG_FILE: "logs/gridtracer.log"
 
+# Microsoft Building Footprints Data URLs
+MSFT_BUILD_FOOTPRINTS:
+  DATASET_LINKS_URL: "https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv"
+  STATES_URL: "https://www2.census.gov/geo/tiger/GENZ2021/shp/cb_2021_us_state_20m.zip"
+
 # BUILDING IMPORT DEFINITIONS
 # Threshold values for building type classification
 # Apartment Buildings (AB)

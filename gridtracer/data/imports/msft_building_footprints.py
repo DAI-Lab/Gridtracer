@@ -17,6 +17,7 @@ import pandas as pd
 from shapely.geometry import Polygon, shape
 from tqdm import tqdm
 
+from gridtracer.config.config_loader import MSFT_BUILD_FOOTPRINTS
 from gridtracer.data.imports.base import DataHandler
 
 if TYPE_CHECKING:
@@ -138,7 +139,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
         # Load Microsoft building footprints index
         self.logger.info("Loading Microsoft building footprints index...")
         dataset_links = pd.read_csv(
-            "https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv"
+            MSFT_BUILD_FOOTPRINTS.get('DATASET_LINKS_URL')
         )
         us_links = dataset_links[dataset_links.Location
                                  == 'UnitedStates'].copy()
@@ -201,20 +202,18 @@ class MicrosoftBuildingsDataHandler(DataHandler):
 
         # Load US state boundaries
         self.logger.info("Loading US state boundaries...")
-        states_url = "https://www2.census.gov/geo/tiger/GENZ2021/shp/cb_2021_us_state_20m.zip"
+        states_url = MSFT_BUILD_FOOTPRINTS.get('STATES_URL')
 
         # Download file first to temporary location, then read it
-        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp_file:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_file = Path(temp_dir) / "states.zip"
             self.logger.info(
-                f"Downloading US states to temporary file: {
-                    tmp_file.name}")
-            urllib.request.urlretrieve(states_url, tmp_file.name)
+                f"Downloading US states to temporary file: {temp_file}")
+            urllib.request.urlretrieve(states_url, temp_file)
 
             # Read the downloaded file
-            states = gpd.read_file(tmp_file.name)
-
-            # Clean up temporary file
-            Path(tmp_file.name).unlink()
+            states = gpd.read_file(temp_file)
+            # Directory and all contents automatically cleaned up
 
         states = states[['NAME', 'STUSPS', 'geometry']].copy()
         states = states.to_crs(4326)
