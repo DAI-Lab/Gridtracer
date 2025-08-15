@@ -1033,6 +1033,130 @@ class TestEvaluationFunction:
         assert len(result) == 0
 
 
+class TestHeightFloorHelperMethods:
+    """Test suite for height/floor parsing and conversion helper methods."""
+
+    def test_parse_height_value_valid_inputs(
+        self,
+        building_processor: BuildingProcessor
+    ) -> None:
+        """Test height parsing with valid inputs."""
+        # Valid numeric string
+        assert building_processor._parse_height_value("10.5") == 10.5
+
+        # Valid with units
+        assert building_processor._parse_height_value("15.2 m") == 15.2
+        assert building_processor._parse_height_value("8 meters") == 8.0
+
+        # Valid numeric value
+        assert building_processor._parse_height_value(12.0) == 12.0
+
+        # Edge cases - boundary values
+        assert building_processor._parse_height_value("0.5") == 0.5  # Lower boundary
+        assert building_processor._parse_height_value("300.0") == 300.0  # Upper boundary
+
+    def test_parse_height_value_invalid_inputs(
+        self,
+        building_processor: BuildingProcessor
+    ) -> None:
+        """Test height parsing with invalid inputs."""
+        # None and NaN values
+        assert building_processor._parse_height_value(None) is None
+        assert building_processor._parse_height_value(pd.NA) is None
+
+        # Out of range values
+        assert building_processor._parse_height_value("0.4") is None  # Too small (below 0.5)
+        assert building_processor._parse_height_value("350") is None   # Too large (above 300)
+        assert building_processor._parse_height_value("-5") is None    # Negative
+
+        # Invalid strings
+        assert building_processor._parse_height_value("invalid") is None
+        assert building_processor._parse_height_value("") is None
+        assert building_processor._parse_height_value("abc m") is None
+
+    def test_parse_floor_value_valid_inputs(
+        self,
+        building_processor: BuildingProcessor
+    ) -> None:
+        """Test floor parsing with valid inputs."""
+        # Valid integers
+        assert building_processor._parse_floor_value("3") == 3
+        assert building_processor._parse_floor_value(5) == 5
+
+        # Valid floats (should be rounded)
+        assert building_processor._parse_floor_value("3.7") == 4  # Rounds up
+        assert building_processor._parse_floor_value("2.2") == 2  # Rounds down
+        assert building_processor._parse_floor_value(1.5) == 2    # Rounds up
+
+        # Edge cases
+        assert building_processor._parse_floor_value("1.0") == 1
+        assert building_processor._parse_floor_value("100.0") == 100
+
+    def test_parse_floor_value_invalid_inputs(
+        self,
+        building_processor: BuildingProcessor
+    ) -> None:
+        """Test floor parsing with invalid inputs."""
+        # None and NaN values
+        assert building_processor._parse_floor_value(None) is None
+        assert building_processor._parse_floor_value(pd.NA) is None
+
+        # Out of range values
+        assert building_processor._parse_floor_value("0") is None     # Too small
+        assert building_processor._parse_floor_value("150") is None   # Too large
+        assert building_processor._parse_floor_value("-2") is None    # Negative
+
+        # Invalid strings
+        assert building_processor._parse_floor_value("invalid") is None
+        assert building_processor._parse_floor_value("") is None
+
+    def test_height_to_floors_conversion(
+        self,
+        building_processor: BuildingProcessor
+    ) -> None:
+        """Test height to floors conversion."""
+        # Using config value RESIDENTIAL_FLOOR_HEIGHT = 2.5m
+        assert building_processor._height_to_floors(2.5) == 1  # Exactly 1 floor
+        assert building_processor._height_to_floors(5.0) == 2  # Exactly 2 floors
+        assert building_processor._height_to_floors(6.0) == 2  # 2.4 floors -> rounds to 2
+        assert building_processor._height_to_floors(7.0) == 3  # 2.8 floors -> rounds to 3
+
+        # Edge cases
+        assert building_processor._height_to_floors(1.0) == 1  # Minimum 1 floor
+        assert building_processor._height_to_floors(0.5) == 1  # Minimum 1 floor
+        assert building_processor._height_to_floors(25.0) == 10  # 10 floors
+
+    def test_floors_to_height_conversion(
+        self,
+        building_processor: BuildingProcessor
+    ) -> None:
+        """Test floors to height conversion."""
+        # Using config value RESIDENTIAL_FLOOR_HEIGHT = 2.5m
+        assert building_processor._floors_to_height(1) == 2.5   # 1 floor = 2.5m
+        assert building_processor._floors_to_height(2) == 5.0   # 2 floors = 5.0m
+        assert building_processor._floors_to_height(4) == 10.0  # 4 floors = 10.0m
+        assert building_processor._floors_to_height(10) == 25.0  # 10 floors = 25.0m
+
+    def test_height_floor_conversion_consistency(
+        self,
+        building_processor: BuildingProcessor
+    ) -> None:
+        """Test that height<->floor conversions are consistent."""
+        # Round trip conversion should be consistent
+        original_height = 7.5  # 3 floors
+        floors = building_processor._height_to_floors(original_height)
+        converted_height = building_processor._floors_to_height(floors)
+
+        # Should be close to original (within rounding tolerance)
+        assert abs(converted_height - original_height) <= 2.5  # Within one floor height
+
+        # Test with exact floor heights
+        for floors in [1, 2, 3, 4, 5]:
+            height = building_processor._floors_to_height(floors)
+            converted_floors = building_processor._height_to_floors(height)
+            assert converted_floors == floors  # Should be exact
+
+
 class TestConstructionYearAllocation:
     """Test suite for construction year allocation functionality."""
 

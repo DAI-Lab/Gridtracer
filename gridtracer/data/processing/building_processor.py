@@ -32,6 +32,9 @@ class BuildingProcessor:
             log_level=LOG_LEVEL,
             log_file=LOG_FILE,
         )
+# --------------------------
+# Main processing method
+# --------------------------
 
     def process(self, census_data: Dict, osm_data: Dict,
                 microsoft_buildings_data: Dict, nrel_vintage_distribution: Dict) -> Dict[str, str]:
@@ -173,6 +176,10 @@ class BuildingProcessor:
             else:
                 self.logger.warning("No non-residential buildings found")
 
+# ----------------
+# Floor area calculation methods
+# --------------------------
+
     def _filter_small_buildings(self, buildings: gpd.GeoDataFrame,
                                 min_area: int = 45) -> gpd.GeoDataFrame:
         """
@@ -196,6 +203,35 @@ class BuildingProcessor:
         )
 
         return buildings
+
+    def _calculate_floor_area(
+            self, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """
+        Add floor_area column in square meters and ensure data is in the correct projection
+
+        Parameters:
+        -----------
+        buildings : GeoDataFrame
+            Building polygons in any CRS
+
+        Returns:
+        --------
+        GeoDataFrame : Buildings with floor_area column added, in
+        """
+
+        if buildings.crs != f"EPSG:{EPSG}":
+            buildings_projected = buildings.to_crs(epsg=EPSG)
+        else:
+            buildings_projected = buildings
+
+        # Calculate area in square meters
+        buildings['floor_area'] = buildings_projected.geometry.area
+
+        return buildings
+
+# ----------------
+# Building classification methods
+# --------------------------
 
     def classify_building_use(self, buildings: gpd.GeoDataFrame,
                               pois: gpd.GeoDataFrame,
@@ -1536,6 +1572,247 @@ class BuildingProcessor:
 
         return buildings_with_ids
 
+    def _allot_construction_year(self, buildings: gpd.GeoDataFrame,
+                                 nrel_vintage_distribution: Dict[str, float]) -> gpd.GeoDataFrame:
+        """
+        Allot construction year for each building based on NREL vintage distribution.
+
+        Parameters:
+        -----------
+        buildings : GeoDataFrame
+            Buildings to assign construction years to
+        nrel_vintage_distribution : Dict[str, float]
+            Distribution of vintage bins with keys like '<1940', '1940s', etc. and values as percentages (0.0-1.0)
+
+        Returns:
+        --------
+        GeoDataFrame : Buildings with added 'construction_year' column
+        """
+        if buildings.empty:
+            self.logger.info(
+                "No buildings to process for construction year assignment")
+            buildings['construction_year'] = None
+            return buildings
+
+        if not nrel_vintage_distribution or sum(
+                nrel_vintage_distribution.values()) == 0:
+            self.logger.warning(
+                "Empty or invalid vintage distribution, assigning 'Unknown'")
+            buildings['construction_year'] = 'Unknown'
+            return buildings
+
+        # Extract vintage categories and their probabilities
+        vintage_bins = list(nrel_vintage_distribution.keys())
+        probabilities = list(nrel_vintage_distribution.values())
+
+        # Normalize probabilities to ensure they sum to 1.0
+        total_prob = sum(probabilities)
+        if total_prob > 0:
+            probabilities = [p / total_prob for p in probabilities]
+        else:
+            # Fallback to uniform distribution if all probabilities are 0
+            probabilities = [1.0 / len(vintage_bins)] * len(vintage_bins)
+
+        assigned_vintages = np.random.choice(
+            vintage_bins,
+            size=len(buildings),
+            p=probabilities
+        )
+
+        buildings = buildings.copy()
+        buildings['construction_year'] = assigned_vintages
+
+        self.logger.info(
+            f"Assigned construction years to {len(buildings)} buildings. ")
+
+        return buildings
+
+# ----------------
+# Floor height calculation methods
+# --------------------------
+
+    def _parse_height_value(self, height_val) -> Optional[float]:
+        """
+        Parse height value from OSM tags or other sources.
+
+        Parameters:
+        -----------
+        height_val : Union[str, float, None]
+            Height value to parse (e.g., "10.5", "15.2 m", 12.0)
+
+        Returns:
+        --------
+        Optional[float]
+            Parsed height in meters, or None if invalid
+        """
+        if pd.isna(height_val) or height_val is None or height_val == "":
+            return None
+
+        try:
+            # Handle string values (like "10.5 m")
+            if isinstance(height_val, str):
+                # Remove common suffixes like 'm', 'meters', 'ft', etc.
+                height_str = str(height_val).strip().lower()
+                # Remove units - order matters to avoid partial matches
+                height_str = height_str.replace(' meters', '').replace('meters', '')
+                height_str = height_str.replace(' feet', '').replace('feet', '')
+                height_str = height_str.replace(' ft', '').replace('ft', '')
+                height_str = height_str.replace(' m', '').replace('m', '')
+                height_str = height_str.strip()
+                height_float = float(height_str)
+            else:
+                # Handle numeric values
+                height_float = float(height_val)
+
+            # Sanity check: height should be reasonable (0.5m to 300m)
+            if 0.5 <= height_float <= 300.0:
+                return height_float
+            else:
+                self.logger.debug(f"Height {height_float}m seems unreasonable, ignoring")
+                return None
+
+        except (ValueError, TypeError):
+            self.logger.debug(f"Could not parse height value: {height_val}")
+            return None
+
+    def _parse_floor_value(self, floor_val) -> Optional[int]:
+        """
+        Parse floor count value from OSM tags or other sources.
+
+        Parameters:
+        -----------
+        floor_val : Union[str, int, float, None]
+            Floor count value to parse (e.g., "3", "3.5", 4)
+
+        Returns:
+        --------
+        Optional[int]
+            Parsed floor count, or None if invalid
+        """
+        if pd.isna(floor_val) or floor_val is None or floor_val == "":
+            return None
+
+        try:
+            # Handle decimal floors (like "3.5") by rounding up
+            floors_float = float(str(floor_val).strip())
+            # Sanity check: number of floors should be reasonable (1-100)
+            if 1.0 <= floors_float <= 100.0:
+                # Round and ensure at least 1 floor
+                return max(1, int(round(floors_float)))
+            else:
+                self.logger.debug(f"Floor count {floors_float} seems unreasonable, ignoring")
+                return None
+
+        except (ValueError, TypeError):
+            self.logger.debug(f"Could not parse floor value: {floor_val}")
+            return None
+
+    def _height_to_floors(self, height: float) -> int:
+        """
+        Convert building height to estimated floor count.
+
+        Parameters:
+        -----------
+        height : float
+            Building height in meters
+
+        Returns:
+        --------
+        int
+            Estimated floor count (minimum 1)
+        """
+        if height <= 0:
+            return 1
+
+        # Use residential floor height from config
+        estimated_floors = height / BUILDING_TYPE_THRESHOLDS['RESIDENTIAL_FLOOR_HEIGHT']
+        return max(1, int(round(estimated_floors)))
+
+    def _floors_to_height(self, floors: int) -> float:
+        """
+        Convert floor count to estimated building height.
+
+        Parameters:
+        -----------
+        floors : int
+            Number of floors
+
+        Returns:
+        --------
+        float
+            Estimated height in meters
+        """
+        if floors <= 0:
+            floors = 1
+
+        # Use residential floor height from config
+        return float(floors) * BUILDING_TYPE_THRESHOLDS['RESIDENTIAL_FLOOR_HEIGHT']
+
+    def calculate_floors(self, buildings: gpd.GeoDataFrame,
+                         microsoft_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """
+        Estimates number of floors for each building based on
+        building type, occupants, and area.
+
+        Parameters:
+        -----------
+        buildings : GeoDataFrame
+            Buildings with occupants and building_type
+
+        Returns:
+        --------
+        GeoDataFrame : Buildings with 'floors' column added
+        """
+        if buildings is None or len(buildings) == 0:
+            return buildings
+
+        # Start log: announce processing scope
+        initial_total_buildings = len(buildings)
+        self.logger.info(
+            f"Starting floors/height calculation for {initial_total_buildings} buildings")
+
+        # Initialize height and floors columns if they don't exist
+        if 'height' not in buildings.columns:
+            buildings['height'] = None
+        if 'floors' not in buildings.columns:
+            buildings['floors'] = None
+
+        # Only process buildings which do not have height data yet:
+        buildings_without_height = buildings[buildings['height'].isna()]
+
+        # Step 1: Extract height and floor information from MS Building footprints
+        buildings_with_floors = self._calculate_floor_height_from_ms_buildings(
+            buildings_without_height, microsoft_buildings)
+
+        # Step 2: Extract height and floor information from OSM tags
+        # Filter out buildings that have height and floors from MS data before osm
+        # tags extraction to not overwrite:
+        undetermined_buildings = buildings_with_floors[buildings_with_floors['height'].isna(
+        ) | buildings_with_floors['floors'].isna()]
+
+        if len(undetermined_buildings) > 0:
+            processed_undetermined = self._calculate_floor_height_from_osm_tags(
+                undetermined_buildings)
+            # Update only the processed buildings back into the main dataset
+            buildings_with_floors.loc[processed_undetermined.index] = processed_undetermined
+
+        # Final summary log (percentages)
+        height_count = buildings_with_floors['height'].notna().sum()
+        floors_count = buildings_with_floors['floors'].notna().sum()
+        total_buildings = len(buildings_with_floors)
+        height_pct = (
+            height_count
+            / total_buildings
+            * 100) if total_buildings > 0 else 0.0
+        floors_pct = (
+            floors_count
+            / total_buildings
+            * 100) if total_buildings > 0 else 0.0
+        self.logger.info(
+            f"Completed floors/height calculation: height={height_pct:.1f}%, floors={floors_pct:.1f}%")
+
+        return buildings_with_floors
+
     def _calculate_floor_height_from_osm_tags(
             self, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
@@ -1564,70 +1841,21 @@ class BuildingProcessor:
 
         # Extract height information from OSM 'height' tag
         if 'height' in buildings_with_height_floors.columns:
-            # Convert height strings to float, handling non-numeric values
-            def parse_height(height_val):
-                """Parse height value from OSM tag (could be string with units)."""
-                if pd.isna(height_val) or height_val is None:
-                    return None
-                try:
-                    # Handle string values that might have units like "21.4 m"
-                    # or just "21.4"
-                    height_str = str(height_val).strip()
-                    # Remove common units and extract numeric part
-                    height_str = height_str.replace(
-                        'm',
-                        '').replace('meters', '').strip()
-                    height_float = float(height_str)
-                    # Sanity check: building height should be reasonable (1-500
-                    # meters)
-                    if 1.0 <= height_float <= 500.0:
-                        return height_float
-                    else:
-                        self.logger.debug(
-                            f"Height value {height_float} seems unreasonable, ignoring")
-                        return None
-                except (ValueError, TypeError):
-                    self.logger.debug(
-                        f"Could not parse height value: {height_val}")
-                    return None
-
-            # Apply height parsing
+            # Apply height parsing using helper method
             height_mask = buildings_with_height_floors['height'].notna()
             if height_mask.any():
                 buildings_with_height_floors.loc[height_mask,
                                                  'height'] = buildings_with_height_floors.loc[height_mask,
-                                                                                              'height'].apply(parse_height)
+                                                                                              'height'].apply(self._parse_height_value)
 
         # Extract floor information from OSM 'building:levels' tag
         if 'building:levels' in buildings_with_height_floors.columns:
-            def parse_floors(levels_val):
-                """Parse building levels from OSM tag."""
-                if pd.isna(levels_val) or levels_val is None:
-                    return None
-                try:
-                    # Handle decimal floors (like "3.5") by rounding up
-                    floors_float = float(str(levels_val).strip())
-                    # Sanity check: number of floors should be reasonable
-                    # (1-200)
-                    if 1.0 <= floors_float <= 100.0:
-                        # Round and ensure at least 1 floor
-                        return max(1, int(round(floors_float)))
-                    else:
-                        self.logger.debug(
-                            f"Floor count {floors_float} seems unreasonable, ignoring")
-                        return None
-                except (ValueError, TypeError):
-                    self.logger.debug(
-                        f"Could not parse building:levels value: {levels_val}")
-                    return None
-
-            # Apply floor parsing
-            levels_mask = buildings_with_height_floors['building:levels'].notna(
-            )
+            # Apply floor parsing using helper method
+            levels_mask = buildings_with_height_floors['building:levels'].notna()
             if levels_mask.any():
                 buildings_with_height_floors.loc[levels_mask,
                                                  'floors'] = buildings_with_height_floors.loc[levels_mask,
-                                                                                              'building:levels'].apply(parse_floors)
+                                                                                              'building:levels'].apply(self._parse_floor_value)
 
         # Log after floors parsing
         after_floors_parsing = buildings_with_height_floors['floors'].notna(
@@ -1641,11 +1869,10 @@ class BuildingProcessor:
             buildings_with_height_floors['floors'].isna())  # Fixed mask logic
 
         if height_no_floors_mask.any():
-            # Estimate floors using residential floor height
-            estimated_floors = buildings_with_height_floors.loc[height_no_floors_mask,
-                                                                'height'] / BUILDING_TYPE_THRESHOLDS['RESIDENTIAL_FLOOR_HEIGHT']
-            buildings_with_height_floors.loc[height_no_floors_mask, 'floors'] = estimated_floors.apply(
-                lambda x: max(1, int(round(x))))
+            # Estimate floors using helper method
+            buildings_with_height_floors.loc[height_no_floors_mask,
+                                             'floors'] = buildings_with_height_floors.loc[height_no_floors_mask,
+                                                                                          'height'].apply(self._height_to_floors)
             self.logger.info(
                 f"Estimated floors from height for {height_no_floors_mask.sum()} buildings")
 
@@ -1655,10 +1882,10 @@ class BuildingProcessor:
             buildings_with_height_floors['floors'].notna())  # Fixed mask logic
 
         if floors_no_height_mask.any():
-            # Estimate height using residential floor height
+            # Estimate height using helper method
             buildings_with_height_floors.loc[floors_no_height_mask,
                                              'height'] = buildings_with_height_floors.loc[floors_no_height_mask,
-                                                                                          'floors'] * BUILDING_TYPE_THRESHOLDS['RESIDENTIAL_FLOOR_HEIGHT']
+                                                                                          'floors'].apply(self._floors_to_height)
             self.logger.info(
                 f"Estimated height from floors for {floors_no_height_mask.sum()} buildings")
 
@@ -1765,7 +1992,7 @@ class BuildingProcessor:
         # Filter out invalid height values (na or negative values)
         height_mask = (ms_buildings_projected['height'].notna()) & \
             (pd.to_numeric(
-                ms_buildings_projected['height'], errors='coerce') > 0)
+                ms_buildings_projected['height'], errors='coerce') > 0.5)
 
         valid_ms_buildings = ms_buildings_projected[height_mask].copy()
 
@@ -1827,22 +2054,18 @@ class BuildingProcessor:
             if 'confidence_ms' in joined.columns:
                 agg_dict['confidence_ms'] = 'mean'
 
-            # Use index_osm to group by OSM building indices (not index_right
-            # due to rsuffix='osm')
+            # Use index_osm to group by OSM building indices 
             osm_stats = joined.groupby('index_osm').agg(agg_dict).round(2)
             osm_stats.columns = ['avg_height', 'ms_count'] + \
                 (['avg_confidence'] if 'confidence_ms' in joined.columns else [])
 
             # Now use the correct OSM building indices
-            osm_building_indices = osm_stats.index  # These are now OSM building indices!
+            osm_building_indices = osm_stats.index  
             buildings_with_ms_height.loc[osm_building_indices,
                                          'height'] = osm_stats['avg_height']
 
-            # Calculate floors with validation
-            floors = (
-                osm_stats['avg_height']
-                / BUILDING_TYPE_THRESHOLDS['RESIDENTIAL_FLOOR_HEIGHT']).round().astype(int).clip(
-                lower=1)  # Using residential floor height
+            # Calculate floors
+            floors = osm_stats['avg_height'].apply(self._height_to_floors)
             buildings_with_ms_height.loc[osm_building_indices,
                                          'floors'] = floors
 
@@ -1856,124 +2079,9 @@ class BuildingProcessor:
 
         return buildings_with_ms_height
 
-    def calculate_floors(self, buildings: gpd.GeoDataFrame,
-                         microsoft_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """
-        Estimates number of floors for each building based on
-        building type, occupants, and area.
-
-        Parameters:
-        -----------
-        buildings : GeoDataFrame
-            Buildings with occupants and building_type
-
-        Returns:
-        --------
-        GeoDataFrame : Buildings with 'floors' column added
-        """
-        if buildings is None or len(buildings) == 0:
-            return buildings
-
-        # Start log: announce processing scope
-        initial_total_buildings = len(buildings)
-        self.logger.info(
-            f"Starting floors/height calculation for {initial_total_buildings} buildings")
-
-        # Initialize height and floors columns if they don't exist
-        if 'height' not in buildings.columns:
-            buildings['height'] = None
-        if 'floors' not in buildings.columns:
-            buildings['floors'] = None
-
-        # Only process buildings which do not have height data yet:
-        buildings_without_height = buildings[buildings['height'].isna()]
-
-        buildings_with_floors = self._calculate_floor_height_from_ms_buildings(
-            buildings_without_height, microsoft_buildings)
-
-        # Step 1: Extract height and floor information from OSM tags
-        # Filter out buildings that have height and floors from MS data before osm
-        # tags extraction to not overwrite:
-        undetermined_buildings = buildings_with_floors[buildings_with_floors['height'].isna(
-        ) | buildings_with_floors['floors'].isna()]
-
-        if len(undetermined_buildings) > 0:
-            processed_undetermined = self._calculate_floor_height_from_osm_tags(
-                undetermined_buildings)
-            # Update only the processed buildings back into the main dataset
-            buildings_with_floors.loc[processed_undetermined.index] = processed_undetermined
-
-        # Final summary log (percentages)
-        height_count = buildings_with_floors['height'].notna().sum()
-        floors_count = buildings_with_floors['floors'].notna().sum()
-        total_buildings = len(buildings_with_floors)
-        height_pct = (
-            height_count
-            / total_buildings
-            * 100) if total_buildings > 0 else 0.0
-        floors_pct = (
-            floors_count
-            / total_buildings
-            * 100) if total_buildings > 0 else 0.0
-        self.logger.info(
-            f"Completed floors/height calculation: height={height_pct:.1f}%, floors={floors_pct:.1f}%")
-
-        return buildings_with_floors
-
-    def _allot_construction_year(self, buildings: gpd.GeoDataFrame,
-                                 nrel_vintage_distribution: Dict[str, float]) -> gpd.GeoDataFrame:
-        """
-        Allot construction year for each building based on NREL vintage distribution.
-
-        Parameters:
-        -----------
-        buildings : GeoDataFrame
-            Buildings to assign construction years to
-        nrel_vintage_distribution : Dict[str, float]
-            Distribution of vintage bins with keys like '<1940', '1940s', etc. and values as percentages (0.0-1.0)
-
-        Returns:
-        --------
-        GeoDataFrame : Buildings with added 'construction_year' column
-        """
-        if buildings.empty:
-            self.logger.info(
-                "No buildings to process for construction year assignment")
-            buildings['construction_year'] = None
-            return buildings
-
-        if not nrel_vintage_distribution or sum(
-                nrel_vintage_distribution.values()) == 0:
-            self.logger.warning(
-                "Empty or invalid vintage distribution, assigning 'Unknown'")
-            buildings['construction_year'] = 'Unknown'
-            return buildings
-
-        # Extract vintage categories and their probabilities
-        vintage_bins = list(nrel_vintage_distribution.keys())
-        probabilities = list(nrel_vintage_distribution.values())
-
-        # Normalize probabilities to ensure they sum to 1.0
-        total_prob = sum(probabilities)
-        if total_prob > 0:
-            probabilities = [p / total_prob for p in probabilities]
-        else:
-            # Fallback to uniform distribution if all probabilities are 0
-            probabilities = [1.0 / len(vintage_bins)] * len(vintage_bins)
-
-        assigned_vintages = np.random.choice(
-            vintage_bins,
-            size=len(buildings),
-            p=probabilities
-        )
-
-        buildings = buildings.copy()
-        buildings['construction_year'] = assigned_vintages
-
-        self.logger.info(
-            f"Assigned construction years to {len(buildings)} buildings. ")
-
-        return buildings
+# ----------------
+# Output methods
+# --------------------------
 
     def write_buildings_output(self, buildings: gpd.GeoDataFrame,
                                output_dir: Union[str, Path],
@@ -2015,28 +2123,3 @@ class BuildingProcessor:
         output_buildings.to_file(output_path)
 
         return output_path
-
-    def _calculate_floor_area(
-            self, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """
-        Add floor_area column in square meters and ensure data is in the correct projection
-
-        Parameters:
-        -----------
-        buildings : GeoDataFrame
-            Building polygons in any CRS
-
-        Returns:
-        --------
-        GeoDataFrame : Buildings with floor_area column added, in
-        """
-
-        if buildings.crs != f"EPSG:{EPSG}":
-            buildings_projected = buildings.to_crs(epsg=EPSG)
-        else:
-            buildings_projected = buildings
-
-        # Calculate area in square meters
-        buildings['floor_area'] = buildings_projected.geometry.area
-
-        return buildings
