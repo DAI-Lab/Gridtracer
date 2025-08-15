@@ -4,7 +4,7 @@
 # An overview can be found here: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
 # states: MA = Massachusetts, AL = Alabama, CA = California, etc.
 # counties: Autauga County, 003 = Baldwin County, etc.
-# count_subdivisions: Autaugaville CCD,
+# count_subdivisions: Autaugaville CCD, if empty = "" the whole county is used
 REGION:
   STATE: "MA" 
   COUNTY: "Middlesex County" 
