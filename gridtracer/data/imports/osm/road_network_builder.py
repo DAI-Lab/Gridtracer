@@ -5,6 +5,7 @@ This module provides functionality to extract and process OpenStreetMap road
 data to create a PostgreSQL/PostGIS compatible SQL file for pgRouting.
 """
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 import geopandas as gpd
@@ -25,9 +26,9 @@ MIN_SPEED_KMH = 1  # Minimum speed to avoid division by zero
 # --- SQL Templates ---
 HEADER_SQL = """SET client_encoding = 'UTF8';
 
-DROP TABLE IF EXISTS public_2po_4pgr;
+DROP TABLE IF EXISTS road_network;
 
-CREATE TABLE public_2po_4pgr (
+CREATE TABLE road_network (
     id integer,
     osm_id bigint,
     osm_name character varying,
@@ -47,23 +48,23 @@ CREATE TABLE public_2po_4pgr (
     x2 double precision,
     y2 double precision
 );
-SELECT AddGeometryColumn('public_2po_4pgr', 'geom_way', 4326, 'LINESTRING', 2);
+SELECT AddGeometryColumn('road_network', 'geom_way', 4326, 'LINESTRING', 2);
 
 """
 
 INDEX_SQL = """
 -- Build spatial index after data load
-CREATE INDEX IF NOT EXISTS osm2po_routing_geom_idx
-    ON public_2po_4pgr USING GIST (geom_way);
+CREATE INDEX IF NOT EXISTS routing_geom_idx
+    ON road_network USING GIST (geom_way);
 
 -- Optional: Indexes on source/target for routing queries
-CREATE INDEX IF NOT EXISTS osm2po_routing_source_idx
-    ON public_2po_4pgr (source);
-CREATE INDEX IF NOT EXISTS osm2po_routing_target_idx
-    ON public_2po_4pgr (target);
+CREATE INDEX IF NOT EXISTS routing_source_idx
+    ON road_network (source);
+CREATE INDEX IF NOT EXISTS routing_target_idx
+    ON road_network (target);
 
 -- Analyze table after index creation and data loading
-ANALYZE public_2po_4pgr;
+ANALYZE road_network;
 """
 
 
@@ -78,7 +79,7 @@ class RoadNetworkBuilder(DataHandler):
     def __init__(
             self,
             orchestrator: 'WorkflowOrchestrator',
-            config_file: Optional[str] = None):
+            road_extraction_config_file: Optional[str] = None):
         """
         Initialize the road network builder.
 
@@ -87,10 +88,10 @@ class RoadNetworkBuilder(DataHandler):
             config_file (str, optional): Path to the YAML configuration file
         """
         super().__init__(orchestrator)
-        # Store orchestrator if needed, or ensure DataHandler does
-        self.orchestrator = orchestrator
-        self.config_file = config_file or 'gridtracer/data/imports/osm/osm2po_config.yaml'
-        self.config = self._load_config()
+
+        self.road_extraction_config_file = road_extraction_config_file or Path(
+            __file__).parent / 'road_network_config.yaml'
+        self.config = self._load_road_extraction_config()
 
     def _get_dataset_name(self):
         """
@@ -99,9 +100,9 @@ class RoadNetworkBuilder(DataHandler):
         Returns:
             str: Dataset name
         """
-        return "STREET_NETWORK"
+        return "ROAD_NETWORK"
 
-    def _load_config(self) -> Dict[str, Any]:
+    def _load_road_extraction_config(self) -> Dict[str, Any]:
         """
         Load configuration from file or use defaults.
 
@@ -121,13 +122,13 @@ class RoadNetworkBuilder(DataHandler):
         }
 
         try:
-            with open(self.config_file, 'r') as f:
+            with open(self.road_extraction_config_file, 'r') as f:
                 config = yaml.safe_load(f)
                 default_config.update(config)
                 return default_config
         except FileNotFoundError:
             self.logger.warning(
-                f"Configuration file '{self.config_file}' not found. "
+                f"Configuration file '{self.road_extraction_config_file}' not found. "
                 f"Using default values."
             )
             return default_config
@@ -188,7 +189,6 @@ class RoadNetworkBuilder(DataHandler):
                         for k, v in way_tag_config.items()}
         flags_map = {k: set(v.get('flags', []))
                      for k, v in way_tag_config.items()}
-
         # Normalize highway values (handle lists)
         edges_gdf['highway_normalized'] = edges_gdf['highway'].apply(
             self._normalize_list_value)
@@ -367,7 +367,10 @@ class RoadNetworkBuilder(DataHandler):
         # Fill missing values with defaults - batch operation
         int_columns = ['u', 'v', 'source', 'target']
         for col in int_columns:
-            edges_gdf[col] = edges_gdf.get(col, -1).fillna(-1).astype(int)
+            if col in edges_gdf.columns:
+                edges_gdf[col] = edges_gdf[col].fillna(-1).astype(int)
+            else:
+                edges_gdf[col] = -1
 
         float_columns = ['cost', 'reverse_cost']
         for col in float_columns:
@@ -437,12 +440,10 @@ class RoadNetworkBuilder(DataHandler):
         if insert_value_tuples:
             # Chunk the insert statements into groups of 1000
             chunk_size = 1000
-            total_chunks = (len(insert_value_tuples)
-                            + chunk_size - 1) // chunk_size
 
             # Insert statement template
             insert_prefix_parts = [
-                "INSERT INTO public_2po_4pgr VALUES"
+                "INSERT INTO road_network VALUES"
             ]
             insert_prefix = "".join(insert_prefix_parts)
 
@@ -565,7 +566,7 @@ class RoadNetworkBuilder(DataHandler):
             # Process the edges for SQL
             full_sql_content = self._process_and_write_edges(edges_gdf)
 
-            output_sql_file = self.dataset_output_dir / "ways_public_2po_4pgr.sql"
+            output_sql_file = self.dataset_output_dir / "road_network.sql"
             try:
                 with open(output_sql_file, "w", encoding="utf-8") as f:
                     # Add some spacing between main SQL sections
@@ -608,7 +609,7 @@ class RoadNetworkBuilder(DataHandler):
         """
         # Define expected output file paths
         geojson_path = self.dataset_output_dir / "road_network.geojson"
-        sql_path = self.dataset_output_dir / "ways_public_2po_4pgr.sql"
+        sql_path = self.dataset_output_dir / "road_network.sql"
 
         # Check if output files already exist
         if geojson_path.exists() and sql_path.exists():

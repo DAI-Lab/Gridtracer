@@ -51,7 +51,7 @@ Output:
         ├── OSM/             # OpenStreetMap extracts
         ├── MICROSOFT_BUILDINGS/  # Building footprints
         ├── BUILDINGS_OUTPUT/     # Classified buildings
-        └── STREET_NETWORK/       # Routable networks
+        └── ROAD_NETWORK/       # Routable networks
 
 Author: MIT Data To AI Lab
 License: MIT

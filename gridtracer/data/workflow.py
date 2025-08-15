@@ -21,7 +21,7 @@ ALL_DATASETS: List[str] = [
     "OSM",
     "MICROSOFT_BUILDINGS",
     "BUILDINGS_OUTPUT",
-    "STREET_NETWORK",
+    "ROAD_NETWORK",
     "PLOTS",
 ]
 
