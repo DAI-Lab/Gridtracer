@@ -898,13 +898,23 @@ class BuildingProcessor:
             lambda idx: sorted(list(clusters_dict.get(idx, {idx})))
         )
 
-        # Step 3: Calculate total cluster area
+        # Step 3: Calculate total cluster area 
         self.logger.debug("Calculating total cluster areas")
-        classified_buildings['total_cluster_area'] = classified_buildings.apply(
-            lambda row: classified_buildings.loc[
-                classified_buildings.index.isin(row['cluster']), 'floor_area'
-            ].sum(),
-            axis=1
+
+        # Create cluster-to-area mapping for lookup
+        cluster_areas = {}
+        for _, row in classified_buildings.iterrows():
+            cluster_id = tuple(sorted(row['cluster']))  # Use sorted tuple as key for consistency
+            if cluster_id not in cluster_areas:
+                # Calculate area once per unique cluster
+                cluster_floor_area = classified_buildings.loc[
+                    classified_buildings.index.isin(row['cluster']), 'floor_area'
+                ].sum()
+                cluster_areas[cluster_id] = cluster_floor_area
+
+            # Vectorized assignment using pre-computed cluster areas
+        classified_buildings['total_cluster_area'] = classified_buildings['cluster'].apply(
+            lambda cluster: cluster_areas[tuple(sorted(cluster))]
         )
 
         # Step 4: Initial classification based on cluster characteristics
