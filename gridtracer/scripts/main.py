@@ -61,7 +61,7 @@ import time
 from gridtracer.config.config_loader import LOG_FILE, LOG_LEVEL
 from gridtracer.data.census_subdivision import CountySubdivisionHandler
 from gridtracer.data.imports.census import CensusDataHandler
-from gridtracer.data.imports.microsoft_buildings import MicrosoftBuildingsDataHandler
+from gridtracer.data.imports.msft_building_footprints import MicrosoftBuildingsDataHandler
 from gridtracer.data.imports.nrel import NRELDataHandler
 from gridtracer.data.imports.osm.osm_data_handler import OSMDataHandler
 from gridtracer.data.imports.osm.road_network_builder import RoadNetworkBuilder
