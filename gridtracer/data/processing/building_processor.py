@@ -924,7 +924,7 @@ class BuildingProcessor:
         --------
         dict : Mapping of building index to list of neighbor indices
         """
-        
+
         try:
             # Self-join to find touching buildings
             touching_pairs = gpd.sjoin(
@@ -1510,34 +1510,24 @@ class BuildingProcessor:
         buildings_with_ids['census_block_id'] = pd.NA
 
         # Process assignments and generate IDs
-        all_assignments_list = []
         assigned_buildings = joined[assigned_mask]
 
         if len(assigned_buildings) > 0:
-            # Create assignments list for ID generation
-            for idx, row in assigned_buildings.iterrows():
-                all_assignments_list.append({
-                    'original_building_idx': idx,
-                    'GEOID20': row['GEOID20']
-                })
+            # Vectorized assignment processing - no more iterrows loops
+            assignments_df = assigned_buildings[['GEOID20']].reset_index()
+            assignments_df = assignments_df.rename(columns={'index': 'original_building_idx'})
+            assignments_df = assignments_df.sort_values(by=['GEOID20', 'original_building_idx'])
+            assignments_df['sequential_id'] = assignments_df.groupby('GEOID20').cumcount() + 1
 
-            # Generate sequential IDs within each block
-            assignments_df = pd.DataFrame(all_assignments_list)
-            assignments_df = assignments_df.sort_values(
-                by=['GEOID20', 'original_building_idx'])
-            assignments_df['sequential_id'] = assignments_df.groupby(
-                'GEOID20').cumcount() + 1
+            # Vectorized ID generation
+            assignments_df['building_id'] = assignments_df['GEOID20'] + \
+                assignments_df['sequential_id'].astype(str).str.zfill(4)
 
-            # Assign IDs back to original buildings
-            for _, row in assignments_df.iterrows():
-                original_idx = row['original_building_idx']
-                geoid = row['GEOID20']
-                seq_id = row['sequential_id']
-
-                building_id_val = f"{geoid}{seq_id:04d}"
-                buildings_with_ids.loc[original_idx,
-                                       'building_id'] = building_id_val
-                buildings_with_ids.loc[original_idx, 'census_block_id'] = geoid
+            # Vectorized assignment back to original buildings
+            buildings_with_ids.loc[assignments_df['original_building_idx'],
+                                   'building_id'] = assignments_df['building_id'].values
+            buildings_with_ids.loc[assignments_df['original_building_idx'],
+                                   'census_block_id'] = assignments_df['GEOID20'].values
 
         else:
             self.logger.warning(
@@ -2057,13 +2047,13 @@ class BuildingProcessor:
             if 'confidence_ms' in joined.columns:
                 agg_dict['confidence_ms'] = 'mean'
 
-            # Use index_osm to group by OSM building indices 
+            # Use index_osm to group by OSM building indices
             osm_stats = joined.groupby('index_osm').agg(agg_dict).round(2)
             osm_stats.columns = ['avg_height', 'ms_count'] + \
                 (['avg_confidence'] if 'confidence_ms' in joined.columns else [])
 
             # Now use the correct OSM building indices
-            osm_building_indices = osm_stats.index  
+            osm_building_indices = osm_stats.index
             buildings_with_ms_height.loc[osm_building_indices,
                                          'height'] = osm_stats['avg_height']
 
