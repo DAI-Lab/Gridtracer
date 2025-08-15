@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Polygon, shape
-from tqdm import tqdm
 
 from gridtracer.config.config_loader import MSFT_BUILD_FOOTPRINTS
 from gridtracer.data.imports.base import DataHandler
@@ -41,7 +40,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
             orchestrator (WorkflowOrchestrator): The workflow orchestrator instance.
         """
         super().__init__(orchestrator)
-        self.mapping_file = self.orchestrator.base_output_dir / \
+        self.mapping_file = self.dataset_output_dir / \
             "us_state_quadkey_mapping.json"
         self.state_mapping: Optional[Dict] = None
 
@@ -160,8 +159,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
         self.logger.info("Creating QuadKey bounding box polygons...")
         quadkey_polygons = []
 
-        for _, row in tqdm(us_links.iterrows(), total=len(
-                us_links), desc="Processing QuadKeys"):
+        for _, row in us_links.iterrows():
             quadkey = str(row['proper_quadkey'])
             url = row['Url']
 
@@ -257,7 +255,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
             json.dump(state_mapping, f, indent=2)
 
         self.logger.info(
-            f"Saved state -> QuadKey mapping to {self.mapping_file}")
+            f"Saved State-QuadKey mapping to: {self.mapping_file}")
         self.logger.info(
             f"Total states with building data: {
                 len(state_mapping)}")
@@ -388,8 +386,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
         state_dir.mkdir(exist_ok=True)
 
         geojson_files = []
-        for quadkey_id in tqdm(filtered_quadkey_ids,
-                               desc=f"Downloading {state_abbr}"):
+        for quadkey_id in filtered_quadkey_ids:
             quadkey_info = state_quadkeys[quadkey_id]
             url = quadkey_info['url']
 
@@ -450,40 +447,38 @@ class MicrosoftBuildingsDataHandler(DataHandler):
         --------
         gpd.GeoDataFrame : Filtered buildings for the region
         """
-
-        # Get region boundary from orchestrator
         region_boundary = self.orchestrator.get_region_boundary()
 
-        # Load all building files
-        all_buildings = []
-        for file_path in tqdm(building_files, desc="Loading building files"):
+        filtered_buildings = []
+        for file_path in building_files:
             try:
+                # Load one file at a time
                 gdf = gpd.read_file(file_path)
-                all_buildings.append(gdf)
+
+                # Ensure same CRS and filter immediately
+                if gdf.crs != region_boundary.crs:
+                    gdf = gdf.to_crs(region_boundary.crs)
+
+                # Filter to region immediately - only keep what we need
+                filtered_gdf = gpd.clip(gdf, region_boundary)
+
+                # Only keep non-empty results
+                if not filtered_gdf.empty:
+                    filtered_buildings.append(filtered_gdf)
+
             except Exception as e:
                 self.logger.warning(f"Error loading {file_path}: {e}")
                 continue
 
-        if not all_buildings:
+        if not filtered_buildings:
             self.logger.warning("No building files could be loaded")
             return gpd.GeoDataFrame()
 
-        # Combine all buildings
-        combined_buildings = gpd.GeoDataFrame(
-            pd.concat(all_buildings, ignore_index=True))
-        self.logger.info(f"Loaded {len(combined_buildings)} total buildings")
+        # Combine only the filtered results
+        result = gpd.GeoDataFrame(pd.concat(filtered_buildings, ignore_index=True))
+        self.logger.info(f"Filtered to {len(result)} buildings within region")
 
-        # Ensure same CRS
-        if combined_buildings.crs != region_boundary.crs:
-            combined_buildings = combined_buildings.to_crs(region_boundary.crs)
-
-        # Filter buildings to region
-        filtered_buildings = gpd.clip(combined_buildings, region_boundary)
-        self.logger.info(
-            f"Filtered to {
-                len(filtered_buildings)} buildings within region")
-
-        return filtered_buildings
+        return result
 
     def download(self) -> Dict[str, any]:
         """
