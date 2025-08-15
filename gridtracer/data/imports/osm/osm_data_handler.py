@@ -17,6 +17,92 @@ from gridtracer.data.imports.base import DataHandler
 if TYPE_CHECKING:
     from gridtracer.data.workflow import WorkflowOrchestrator
 
+MAX_VOLTAGE = 70_000
+DEDUPLICATION_THRESHOLD_IN_METERS = 15
+
+LANDUSE_TAGS = set([
+    "landuse",
+    "name"
+])
+
+POI_TAGS = {
+    "amenity": True,
+    "shop": True,
+    "tourism": True,
+    "leisure": True,
+    "office": True
+}
+
+BUILDINGS_TAGS = set([
+    "element",
+    "id",
+    "addr:housenumber",
+    "addr:postcode",
+    "addr:street",
+    "building",
+    "leisure",
+    "name",
+    "operator",
+    "amenity",
+    "office",
+    "building:levels",
+    "building:material",
+    "height",
+    "location",
+    "roof:shape",
+    "year_of_construction",
+    "building:colour",
+    "roof:colour",
+    "roof:material",
+    "name:en",
+    "roof:levels",
+    "operator:type",
+    "description",
+    "air_conditioning",
+    "check_date",
+    "architect:renovation",
+    "building:levels:underground",
+    "renovation_date",
+    "parking",
+    "shop",
+    "man_made",
+    "construction_date",
+    "heritage",
+    "heritage:operator",
+    "ref:nrhp",
+    "university",
+    "landuse",
+    "material",
+    "historic",
+    "building:architecture",
+    "building:levels:roof",
+    "max_level",
+    "building:flats",
+    "building:use",
+    "source:height",
+    "social_facility:for",
+    "rooms",
+    "level",
+    "government",
+    "telecom",
+    "military",
+    "type",
+    "building:units",
+    "building:part",
+    "min_height",
+    "plant:method",
+    "plant:output:electricity",
+    "plant:output:hot_water",
+    "plant:source",
+    "building:min_level",
+    "construction:building:levels",
+    "construction",
+    "renovation",
+    "house",
+    "maxheight",
+    "building:floor"
+])
+
 
 class OSMDataHandler(DataHandler):
     """
@@ -46,7 +132,7 @@ class OSMDataHandler(DataHandler):
         return "OSM"
 
     def deduplicate_power_features(
-            self, power_gdf, distance_threshold_meters=15):
+            self, power_gdf, distance_threshold_meters=DEDUPLICATION_THRESHOLD_IN_METERS):
         """
         Deduplicate power infrastructure features that are within a distance threshold.
 
@@ -106,13 +192,13 @@ class OSMDataHandler(DataHandler):
         return deduplicated_gdf
 
     def filter_by_voltage(self, power_gdf: gpd.GeoDataFrame,
-                          max_voltage: float = 130_000) -> gpd.GeoDataFrame:
+                          max_voltage: float = MAX_VOLTAGE) -> gpd.GeoDataFrame:
         """
         Filter out high-voltage transmission infrastructure by checking the 'voltage' tag.
 
         Args:
             power_gdf: GeoDataFrame containing power infrastructure
-            max_voltage: Maximum voltage in volts to keep (default 130,000V for distribution)
+            max_voltage: Maximum voltage in volts to keep
 
         Returns:
             GeoDataFrame: Filtered GeoDataFrame
@@ -153,8 +239,6 @@ class OSMDataHandler(DataHandler):
         # Log the voltage distribution
         voltage_distribution = voltage_values.value_counts(dropna=False)
         self.logger.info(f"Voltage distribution: {voltage_distribution}")
-
-        len(power_gdf) - voltage_mask.sum()
 
         return power_gdf[voltage_mask]
 
@@ -209,8 +293,6 @@ class OSMDataHandler(DataHandler):
         # Find points within polygons
         contained_mask = points.geometry.within(polygon_union)
         indices_to_remove = points[contained_mask].index
-
-        len(indices_to_remove)
 
         return power_gdf.drop(indices_to_remove)
 
@@ -278,30 +360,19 @@ class OSMDataHandler(DataHandler):
         raw_power_filepath.parent.mkdir(parents=True, exist_ok=True)
         power_features.to_file(raw_power_filepath, driver="GeoJSON")
 
-        # Initial logging with detailed breakdown
-        len(power_features)
-
         # Add element_type column based on geometry
         power_features['element_type'] = power_features.geometry.apply(
             lambda g: 'node' if isinstance(g, Point) else 'way'
         )
 
-        # Step 1: Filter by voltage (keep only distribution level ≤130kV)
+        # Step 1: Filter by voltage MAX_VOLTAGE
         power_features = self.filter_by_voltage(power_features)
 
         # Step 2: Remove points contained within polygons
         power_features = self.remove_contained_points(power_features)
 
-        # Step 3: Filter distribution poles
-        def has_distribution_transformer(row):
-            return row.get('transformer') == 'distribution'
-
-        transformer_substation_mask = power_features['power'].isin(
-            ['transformer', 'substation'])
-        poles_mask = ((power_features['power'] == 'pole')
-                      & power_features.apply(has_distribution_transformer, axis=1))
-
-        final_mask = transformer_substation_mask | poles_mask
+        # Step 3: Keep transformers, substations, and all poles
+        final_mask = power_features['power'].isin(['transformer', 'substation', 'pole'])
         power_features = power_features[final_mask]
 
         # Step 4: Spatial deduplication
@@ -338,8 +409,8 @@ class OSMDataHandler(DataHandler):
             tuple: (GeoDataFrame of buildings, Path to saved GeoJSON file) or (None, None)
                 on failure.
         """
-        self.logger.info("Extracting buildings using shared pyrosm parser.")
 
+        self.logger.info("Extracting buildings with PYROSM — non-subcounty runs may take minutes.")
         try:
             buildings_gdf = osm_parser.get_buildings()
 
@@ -358,80 +429,9 @@ class OSMDataHandler(DataHandler):
             self.logger.debug(
                 f"Saved raw extracted buildings to {raw_buildings_filepath}")
 
-            relevant_tags = set([
-                "element",
-                "id",
-                "addr:housenumber",
-                "addr:postcode",
-                "addr:street",
-                "building",
-                "leisure",
-                "name",
-                "operator",
-                "amenity",
-                "office",
-                "building:levels",
-                "building:material",
-                "height",
-                "location",
-                "roof:shape",
-                "year_of_construction",
-                "building:colour",
-                "roof:colour",
-                "roof:material",
-                "name:en",
-                "roof:levels",
-                "operator:type",
-                "description",
-                "air_conditioning",
-                "check_date",
-                "architect:renovation",
-                "building:levels:underground",
-                "renovation_date",
-                "parking",
-                "shop",
-                "man_made",
-                "construction_date",
-                "heritage",
-                "heritage:operator",
-                "ref:nrhp",
-                "university",
-                "landuse",
-                "material",
-                "historic",
-                "building:architecture",
-                "building:levels:roof",
-                "max_level",
-                "building:flats",
-                "building:use",
-                "source:height",
-                "social_facility:for",
-                "rooms",
-                "level",
-                "government",
-                "telecom",
-                "military",
-                "type",
-                "building:units",
-                "building:part",
-                "min_height",
-                "plant:method",
-                "plant:output:electricity",
-                "plant:output:hot_water",
-                "plant:source",
-                "building:min_level",
-                "construction:building:levels",
-                "construction",
-                "renovation",
-                "house",
-                "maxheight",
-                "building:floor"
-            ])
-
-            # 'id' is usually the OSM id from pyrosm
             columns_to_keep = ['geometry', 'id']
             available_cols = buildings_gdf.columns
-            for col_name in relevant_tags:
+            for col_name in BUILDINGS_TAGS:
                 if col_name in available_cols and col_name not in columns_to_keep:
                     columns_to_keep.append(col_name)
 
@@ -476,18 +476,9 @@ class OSMDataHandler(DataHandler):
 
         try:
 
-            # Define POI tags
-            poi_tags = {
-                "amenity": True,
-                "shop": True,
-                "tourism": True,
-                "leisure": True,
-                "office": True
-            }
-
             # Extract POIs using OSMnx's current API
             pois = osm_parser.get_pois(
-                custom_filter=poi_tags,
+                custom_filter=POI_TAGS,
             )
 
             raw_pois_filepath = self.dataset_output_dir / "raw" / "raw_pois.geojson"
@@ -547,10 +538,6 @@ class OSMDataHandler(DataHandler):
             return None, None
 
         try:
-            relevant_tags = set([
-                "landuse",
-                "name"
-            ])
 
             landuse_gdf = osm_parser.get_landuse()
 
@@ -563,7 +550,7 @@ class OSMDataHandler(DataHandler):
                 columns_to_keep.append('osmid')
 
             for col in landuse_gdf.columns:
-                if col in relevant_tags and col not in columns_to_keep:
+                if col in LANDUSE_TAGS and col not in columns_to_keep:
                     columns_to_keep.append(col)
 
             landuse_gdf = landuse_gdf[columns_to_keep]
