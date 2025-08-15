@@ -498,9 +498,13 @@ class BuildingProcessor:
             )].copy()
 
             if not buildings_to_classify_via_poi.empty:
-                buildings_with_pois = gpd.sjoin(
-                    buildings_to_classify_via_poi, pois, how='left', predicate='intersects', lsuffix='', rsuffix='poi'
-                )
+                try:
+                    buildings_with_pois = gpd.sjoin(
+                        buildings_to_classify_via_poi, pois, how='left', predicate='intersects', lsuffix='', rsuffix='poi'
+                    )
+                except Exception as e:
+                    self.logger.error(f"Spatial join failed: {e}")
+                    raise RuntimeError(f"Spatial join failed: {e}") from e
 
                 poi_index_col_name = 'index_poi'
                 if pois.index.name is not None:
@@ -638,9 +642,13 @@ class BuildingProcessor:
             )].copy()
 
             if not buildings_to_classify_via_landuse.empty:
-                buildings_with_landuse = gpd.sjoin(
-                    buildings_to_classify_via_landuse, landuse, how='left', predicate='within', lsuffix='', rsuffix='landuse'
-                )
+                try:
+                    buildings_with_landuse = gpd.sjoin(
+                        buildings_to_classify_via_landuse, landuse, how='left', predicate='within', lsuffix='', rsuffix='landuse'
+                    )
+                except Exception as e:
+                    self.logger.error(f"Spatial join failed: {e}")
+                    raise RuntimeError(f"Spatial join failed: {e}") from e
 
                 # Dynamically determine the index column from the right
                 # GeoDataFrame (landuse)
@@ -927,13 +935,17 @@ class BuildingProcessor:
 
         try:
             # Self-join to find touching buildings
-            touching_pairs = gpd.sjoin(
-                buildings, buildings,
-                how='inner',
-                predicate='touches',
-                lsuffix='_left',
-                rsuffix='_right'
-            )
+            try:
+                touching_pairs = gpd.sjoin(
+                    buildings, buildings,
+                    how='inner',
+                    predicate='touches',
+                    lsuffix='_left',
+                    rsuffix='_right'
+                )
+            except Exception as e:
+                self.logger.error(f"Spatial join failed: {e}")
+                raise RuntimeError(f"Spatial join failed: {e}") from e
 
             # Group by left index to create neighbors dict
             neighbors_dict = {}
@@ -1463,12 +1475,16 @@ class BuildingProcessor:
 
         try:
             # Spatial join: centroid WITHIN census_block
-            joined = gpd.sjoin(
-                building_centroids,
-                census_blocks_proj[['GEOID20', 'geometry']],
-                how='left',
-                predicate='within'
-            )
+            try:
+                joined = gpd.sjoin(
+                    building_centroids,
+                    census_blocks_proj[['GEOID20', 'geometry']],
+                    how='left',
+                    predicate='within'
+                )
+            except Exception as e:
+                self.logger.error(f"Spatial join failed: {e}")
+                raise RuntimeError(f"Spatial join failed: {e}") from e
 
             # Count successful assignments
             assigned_mask = joined['index_right'].notna()
@@ -2029,14 +2045,19 @@ class BuildingProcessor:
         # Perform centroid-based spatial join
         try:
             self.logger.debug("Performing centroid-based spatial join")
-            joined = gpd.sjoin(
-                ms_centroids_filtered,  # MS building centroids (left)
-                buildings_projected,    # OSM buildings (right)
-                how='inner',
-                predicate='within',
-                lsuffix='ms',          # MS building columns get _ms suffix
-                rsuffix='osm'          # OSM building columns get _osm suffix
-            )
+            try:
+                joined = gpd.sjoin(
+                    ms_centroids_filtered,  # MS building centroids (left)
+                    buildings_projected,    # OSM buildings (right)
+                    how='inner',
+                    predicate='within',
+                    lsuffix='ms',          # MS building columns get _ms suffix
+                    rsuffix='osm'          # OSM building columns get _osm suffix
+                )
+            except Exception as e:
+                self.logger.error(f"Spatial join failed: {e}")
+                raise RuntimeError(f"Spatial join failed: {e}") from e
+
             if len(joined) == 0:
                 self.logger.debug(
                     "No MS building centroids fall within OSM buildings")
