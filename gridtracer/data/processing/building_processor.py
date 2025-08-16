@@ -554,9 +554,7 @@ class BuildingProcessor:
             # beforehand.
             if classified_buildings.crs != pois.crs:
                 self.logger.warning(
-                    f"CRS mismatch between buildings ({
-                        classified_buildings.crs}) and POIs ({
-                        pois.crs})"
+                    f"CRS mismatch between buildings ({classified_buildings.crs}) " f"and POIs ({pois.crs})"
                 )
                 pois = pois.to_crs(classified_buildings.crs)
 
@@ -734,9 +732,8 @@ class BuildingProcessor:
         else:
             if classified_buildings.crs != landuse.crs:
                 self.logger.warning(
-                    f"CRS mismatch between buildings ({
-                        classified_buildings.crs}) and landuse ({
-                        landuse.crs}). "
+                    f"CRS mismatch between buildings ({classified_buildings.crs}) "
+                    f"and landuse ({landuse.crs}). "
                     f"Reprojecting landuse to match buildings. Ensure this is the correct approach."
                 )
                 landuse = landuse.to_crs(classified_buildings.crs)
@@ -762,8 +759,7 @@ class BuildingProcessor:
                 # Default if landuse.index was unnamed
                 landuse_join_index_col_name = "index_landuse"
                 if landuse.index.name is not None:
-                    landuse_join_index_col_name = f"{
-                        landuse.index.name}_landuse"
+                    landuse_join_index_col_name = f"{landuse.index.name}_landuse"
 
                 if landuse_join_index_col_name not in buildings_with_landuse.columns:
                     self.logger.warning(
@@ -861,11 +857,7 @@ class BuildingProcessor:
 
         # Final counts
         self.logger.debug("Building use classification complete. Value counts:")
-        self.logger.info(
-            f"\n{
-                classified_buildings['building_use'].value_counts(
-                    dropna=False)}"
-        )
+        self.logger.info(f"\n{classified_buildings['building_use'].value_counts(dropna=False)}")
         return classified_buildings
 
     def _cleaning_osm_data(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -1602,18 +1594,9 @@ class BuildingProcessor:
             if assigned_count > 0:
                 block_distribution = joined[assigned_mask].groupby("GEOID20").size()
                 self.logger.debug(f"Assignment distribution across {len(block_distribution)} census blocks:")
-                self.logger.debug(
-                    f"  Average buildings per block: {
-                        block_distribution.mean():.1f}"
-                )
-                self.logger.debug(
-                    f"  Max buildings in single block: {
-                        block_distribution.max()}"
-                )
-                self.logger.debug(
-                    f"  Min buildings in single block: {
-                        block_distribution.min()}"
-                )
+                self.logger.debug(f"  Average buildings per block: {block_distribution.mean():.1f}")
+                self.logger.debug(f"  Max buildings in single block: {block_distribution.max()}")
+                self.logger.debug(f"  Min buildings in single block: {block_distribution.min()}")
 
                 # Log top 5 blocks by building count
                 top_blocks = block_distribution.nlargest(5)
@@ -2051,11 +2034,7 @@ class BuildingProcessor:
         self.logger.debug(
             f"Extracting height data for {len(buildings)} buildings from {len(microsoft_buildings)} MS building footprints"
         )
-        self.logger.debug(
-            f"Microsoft Buildings columns: {
-                list(
-                    microsoft_buildings.columns)}"
-        )
+        self.logger.debug(f"Microsoft Buildings columns: {list(microsoft_buildings.columns)}")
 
         # Create working copy
         buildings_with_ms_height = buildings.copy()

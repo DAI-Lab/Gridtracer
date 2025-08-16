@@ -130,19 +130,13 @@ class MicrosoftBuildingsDataHandler(DataHandler):
         self.logger.info("Loading Microsoft building footprints index...")
         dataset_links = pd.read_csv(MSFT_BUILD_FOOTPRINTS.get("DATASET_LINKS_URL"))
         us_links = dataset_links[dataset_links.Location == "UnitedStates"].copy()
-        self.logger.info(
-            f"Found {
-                len(us_links)} total QuadKey tiles for United States"
-        )
+        self.logger.info(f"Found {len(us_links)} total QuadKey tiles for United States")
 
         # Extract properly formatted QuadKeys with leading zeros from URLs
         us_links["proper_quadkey"] = us_links["Url"].apply(self._extract_quadkey_from_url)
         us_links = us_links[us_links["proper_quadkey"].notna()].copy()
 
-        self.logger.info(
-            f"Successfully extracted {
-                len(us_links)} properly formatted QuadKeys"
-        )
+        self.logger.info(f"Successfully extracted {len(us_links)} properly formatted QuadKeys")
 
         # Create QuadKey bounding box polygons
         self.logger.info("Creating QuadKey bounding box polygons...")
@@ -187,10 +181,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
                 continue
 
         quadkey_gdf = gpd.GeoDataFrame(quadkey_polygons, crs=4326)
-        self.logger.info(
-            f"Created {
-                len(quadkey_gdf)} valid QuadKey bounding boxes"
-        )
+        self.logger.info(f"Created {len(quadkey_gdf)} valid QuadKey bounding boxes")
 
         # Load US state boundaries
         self.logger.info("Loading US state boundaries...")
@@ -243,20 +234,14 @@ class MicrosoftBuildingsDataHandler(DataHandler):
             json.dump(state_mapping, f, indent=2)
 
         self.logger.info(f"Saved State-QuadKey mapping to: {self.mapping_file}")
-        self.logger.info(
-            f"Total states with building data: {
-                len(state_mapping)}"
-        )
+        self.logger.info(f"Total states with building data: {len(state_mapping)}")
 
         return state_mapping
 
     def _load_state_mapping(self) -> Dict:
         """Load or create the state -> QuadKey mapping."""
         if self.mapping_file.exists():
-            self.logger.info(
-                f"Loading existing state mapping from {
-                    self.mapping_file}"
-            )
+            self.logger.info(f"Loading existing state mapping from {self.mapping_file}")
             with open(self.mapping_file) as f:
                 return json.load(f)
         else:
@@ -316,9 +301,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
         filtered_quadkey_ids = intersecting_quadkeys["quadkey"].unique().tolist()
 
         self.logger.info(
-            f"Filtered {
-                len(state_quadkeys)} QuadKeys to {
-                len(filtered_quadkey_ids)} "
+            f"Filtered {len(state_quadkeys)} QuadKeys to {len(filtered_quadkey_ids)} "
             f"that intersect with region boundary"
         )
 
@@ -353,10 +336,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
 
         if max_tiles:
             filtered_quadkey_ids = filtered_quadkey_ids[:max_tiles]
-            self.logger.info(
-                f"Limited to first {
-                    len(filtered_quadkey_ids)} tiles for testing"
-            )
+            self.logger.info(f"Limited to first {len(filtered_quadkey_ids)} tiles for testing")
 
         if not filtered_quadkey_ids:
             self.logger.warning("No QuadKeys intersect with the region boundary")
@@ -410,10 +390,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
                 self.logger.warning(f"Error downloading QuadKey {quadkey_id}: {e}")
                 continue
 
-        self.logger.info(
-            f"Successfully downloaded {
-                len(geojson_files)} intersecting tiles for {state_abbr}"
-        )
+        self.logger.info(f"Successfully downloaded {len(geojson_files)} intersecting tiles for {state_abbr}")
         return geojson_files
 
     def _filter_buildings_to_region(self, building_files: List[Path]) -> gpd.GeoDataFrame:
@@ -503,10 +480,7 @@ class MicrosoftBuildingsDataHandler(DataHandler):
                 output_path = self.dataset_output_dir / "ms_buildings_output.geojson"
                 filtered_buildings.to_file(output_path, driver="GeoJSON")
 
-                self.logger.info(
-                    f"Saved {
-                        len(filtered_buildings)} filtered buildings to {output_path}"
-                )
+                self.logger.info(f"Saved {len(filtered_buildings)} filtered buildings to {output_path}")
 
                 return {
                     "ms_buildings": filtered_buildings,

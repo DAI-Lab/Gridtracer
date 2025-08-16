@@ -309,10 +309,7 @@ class OSMDataHandler(DataHandler):
         # Convert back to WGS84 for final output
         power_centroids = power_projected.to_crs("EPSG:4326")
 
-        self.logger.info(
-            f"Converted {
-                len(power_centroids)} features to centroid points"
-        )
+        self.logger.info(f"Converted {len(power_centroids)} features to centroid points")
 
         return power_centroids
 
@@ -498,10 +495,7 @@ class OSMDataHandler(DataHandler):
 
             pois = pois[columns_to_keep]
 
-            self.logger.info(
-                f"Successfully extracted {
-                    len(pois)} POIs with OSMnx"
-            )
+            self.logger.info(f"Successfully extracted {len(pois)} POIs with OSMnx")
 
             # Save POIs
             pois_filepath = self.dataset_output_dir / "pois.geojson"
@@ -547,10 +541,7 @@ class OSMDataHandler(DataHandler):
                 self.logger.warning("No land use data found in OpenStreetMap")
                 return None, None
 
-            self.logger.info(
-                f"Extracted {
-                    len(landuse_gdf)} total landuse features"
-            )
+            self.logger.info(f"Extracted {len(landuse_gdf)} total landuse features")
 
             # Define your simplified classification mapping
             landuse_categories = {
@@ -579,10 +570,7 @@ class OSMDataHandler(DataHandler):
             landuse_gdf = landuse_gdf[landuse_gdf["landuse"].isin(landuse_categories.keys())].copy()
             landuse_gdf["category"] = landuse_gdf["landuse"].map(landuse_categories)
 
-            self.logger.info(
-                f"Filtered down to {
-                    len(landuse_gdf)} categorized landuse polygons"
-            )
+            self.logger.info(f"Filtered down to {len(landuse_gdf)} categorized landuse polygons")
 
             # Save file
             landuse_filepath = self.dataset_output_dir / "landuse.geojson"

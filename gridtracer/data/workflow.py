@@ -60,10 +60,7 @@ class WorkflowOrchestrator:
         self.is_county_subdivision = self.fips_dict.get("subdivision") is not None
         self._create_output_directories()
 
-        self.logger.info(
-            f"Orchestrator initialized. Operating on County Subdivision: {
-                self.is_county_subdivision}"
-        )
+        self.logger.info(f"Orchestrator initialized. Operating on County Subdivision: " f"{self.is_county_subdivision}")
 
     def _resolve_fips_codes(self) -> None:
         """
@@ -162,10 +159,8 @@ class WorkflowOrchestrator:
             # Simple formatted logging
             if self.fips_dict["subdivision"]:
                 self.logger.info(
-                    f"FIPS codes resolved: {
-                        self.fips_dict['state']} - {
-                        self.fips_dict['county']} - {
-                        self.fips_dict['subdivision']} "
+                    f"FIPS codes resolved: {self.fips_dict['state']} - "
+                    f"{self.fips_dict['county']} - {self.fips_dict['subdivision']} "
                     f"({self.fips_dict['state_fips']}-{self.fips_dict['county_fips']}-{self.fips_dict['subdivision_fips']})"
                 )
             else:
@@ -205,10 +200,7 @@ class WorkflowOrchestrator:
 
         self.regional_base_output_dir = regional_path
         self.regional_base_output_dir.mkdir(parents=True, exist_ok=True)
-        self.logger.info(
-            f"Set output directory to: {
-                self.regional_base_output_dir}"
-        )
+        self.logger.info(f"Set output directory to: {self.regional_base_output_dir}")
 
         # Create subdirectories for all known datasets
         for dataset_name in ALL_DATASETS:

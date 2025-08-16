@@ -164,10 +164,7 @@ class CensusDataHandler(DataHandler):
             raise ValueError(f"No blocks found for county FIPS {county_fips}.")
 
         # County blocks loaded and filtered successfully
-        self.logger.debug(
-            f"Loaded {
-                len(county_blocks_gdf_filtered)} blocks for county {county_fips}"
-        )
+        self.logger.debug(f"Loaded {len(county_blocks_gdf_filtered)} blocks for county {county_fips}")
         return county_blocks_gdf_filtered
 
     def download(self) -> Dict[str, Any]:

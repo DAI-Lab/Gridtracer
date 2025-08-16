@@ -522,11 +522,7 @@ class RoadNetworkBuilder(DataHandler):
 
             edges_gdf = edges_gdf.reset_index()
 
-            self.logger.info(
-                f"Loaded {
-                    len(nodes)} nodes and {
-                    len(edges_gdf)} total edges."
-            )
+            self.logger.info(f"Loaded {len(nodes)} nodes and {len(edges_gdf)} total edges.")
 
             unique_node_ids = pd.Series(pd.concat([edges_gdf["u"], edges_gdf["v"]]).unique())
 
@@ -598,10 +594,7 @@ class RoadNetworkBuilder(DataHandler):
             # Load existing edges data if available
             try:
                 edges_gdf = gpd.read_file(geojson_path)
-                self.logger.info(
-                    f"Loaded existing road network with {
-                        len(edges_gdf)} edges"
-                )
+                self.logger.info(f"Loaded existing road network with {len(edges_gdf)} edges")
             except Exception as e:
                 self.logger.warning(f"Could not load existing GeoJSON file: {e}")
                 edges_gdf = None

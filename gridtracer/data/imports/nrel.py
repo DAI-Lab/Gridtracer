@@ -126,10 +126,7 @@ class NRELDataHandler(DataHandler):
     def _validate_inputs(self) -> bool:
         """Validate required inputs for NREL processing."""
         if not self.input_file_path or not self.input_file_path.exists():
-            self.logger.error(
-                f"NREL input file not found: {
-                    self.input_file_path}"
-            )
+            self.logger.error(f"NREL input file not found: {self.input_file_path}")
             return False
 
         return True
