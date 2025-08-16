@@ -13,7 +13,17 @@ with open("HISTORY.md", encoding="utf-8") as history_file:
     history = history_file.read()
 
 # Core dependencies moved from requirements.txt
-install_requires: List[str] = []
+install_requires: List[str] = [
+    "geopandas>=0.13.0",
+    "pandas>=1.5.0",
+    "shapely>=1.8.0",
+    "pyrosm>=0.6.0",
+    "osmnx>=1.6.0",
+    "numpy>=1.21.0",
+    "pyyaml>=6.0.0",
+    "pyarrow>=10.0.0",
+    "contextily>=1.3.0",
+]
 
 setup_requires = [
     "pytest-runner>=2.11.1",
@@ -30,9 +40,9 @@ development_requires = [
     "pip>=9.0.1",
     "watchdog>=0.8.3",
     # docs
-    "m2r>=0.2.0,<0.3",
-    "Sphinx>=1.7.1,<3",
-    "sphinx_rtd_theme>=0.2.4,<0.5",
+    "myst-parser>=0.18.0",
+    "Sphinx>=7.0.0",
+    "sphinx_rtd_theme>=2.0.0",
     "autodocsumm>=0.1.10",
     # style check
     "flake8>=3.7.7",
@@ -58,10 +68,10 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Natural Language :: English",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
         "Topic :: Scientific/Engineering :: GIS",
         "Topic :: Scientific/Engineering :: Information Analysis",
     ],
@@ -79,7 +89,7 @@ setup(
     keywords="gridtracer electrical-grid geospatial preprocessing energy-modeling",
     name="gridtracer",
     packages=find_packages(include=["gridtracer", "gridtracer.*"]),
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     setup_requires=setup_requires,
     test_suite="tests",
     tests_require=tests_require,

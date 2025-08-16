@@ -44,14 +44,15 @@ Usage:
         python gridtracer/scripts/main.py
 
 Output:
-    Hierarchical directory structure organized by administrative region:
-    output/{STATE}/{COUNTY}/{SUBDIVISION}/
-        ├── CENSUS/          # Boundaries and census blocks
-        ├── NREL/            # Building typology data
-        ├── OSM/             # OpenStreetMap extracts
-        ├── MICROSOFT_BUILDINGS/  # Building footprints
-        ├── BUILDINGS_OUTPUT/     # Classified buildings
-        └── ROAD_NETWORK/       # Routable networks
+    Hierarchical directory structure organized by administrative region::
+
+        output/{STATE}/{COUNTY}/{SUBDIVISION}/
+            ├── CENSUS/          # Boundaries and census blocks
+            ├── NREL/            # Building typology data
+            ├── OSM/             # OpenStreetMap extracts
+            ├── MICROSOFT_BUILDINGS/  # Building footprints
+            ├── BUILDINGS_OUTPUT/     # Classified buildings
+            └── ROAD_NETWORK/       # Routable networks
 
 Author: MIT Data To AI Lab
 License: MIT
