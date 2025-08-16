@@ -31,14 +31,7 @@ All outputs are georeferenced and organized by administrative hierarchy for seam
 ## Installation
 
 ```bash
-# Install package in development mode (recommended)
-make install-develop
-
-# Or install for production
 make install
-
-# Install test dependencies only
-make install-test
 ```
 
 ## Configuration
