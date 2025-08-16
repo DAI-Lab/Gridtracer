@@ -56,12 +56,16 @@ Output:
 Author: MIT Data To AI Lab
 License: MIT
 """
+
 import time
+from pathlib import Path
 
 from gridtracer.config.config_loader import LOG_FILE, LOG_LEVEL
 from gridtracer.data.census_subdivision import CountySubdivisionHandler
 from gridtracer.data.imports.census import CensusDataHandler
-from gridtracer.data.imports.msft_building_footprints import MicrosoftBuildingsDataHandler
+from gridtracer.data.imports.msft_building_footprints import (
+    MicrosoftBuildingsDataHandler,
+)
 from gridtracer.data.imports.nrel import NRELDataHandler
 from gridtracer.data.imports.osm.osm_data_handler import OSMDataHandler
 from gridtracer.data.imports.osm.road_network_builder import RoadNetworkBuilder
@@ -76,8 +80,7 @@ logger = create_logger(
 )
 
 
-def run_full_pipeline(
-) -> None:
+def run_full_pipeline() -> None:
     """
     Run the full data import pipeline for the target region.
 
@@ -106,10 +109,8 @@ def run_full_pipeline(
         census_handler = CensusDataHandler(orchestrator)
         census_data = census_handler.process()
 
-        subcounty_segmentation_handler = CountySubdivisionHandler(
-            orchestrator=orchestrator)
-        subcounty_segmentation_handler.process(
-            state_filter=orchestrator.fips_dict['state'])
+        subcounty_segmentation_handler = CountySubdivisionHandler(orchestrator=orchestrator)
+        subcounty_segmentation_handler.process(state_filter=orchestrator.fips_dict["state"])
 
         # --- STEP 3: Census Subdivision Segmentation ---
         logger.info("--------------------------------")
@@ -128,8 +129,7 @@ def run_full_pipeline(
         # --- STEP 5: Process Microsoft Buildings Data ---
         logger.info("STEP 5: Processing Microsoft Buildings data")
         logger.info("--------------------------------")
-        microsoft_buildings_handler = MicrosoftBuildingsDataHandler(
-            orchestrator)
+        microsoft_buildings_handler = MicrosoftBuildingsDataHandler(orchestrator)
         microsoft_buildings_data = microsoft_buildings_handler.process()
 
         # # --- STEP 6: Building Classification ---
@@ -137,14 +137,14 @@ def run_full_pipeline(
         logger.info("STEP 6: Building Classification")
         logger.info("--------------------------------")
         building_processor = BuildingProcessor(
-            orchestrator.get_dataset_specific_output_directory(
-                "BUILDINGS_OUTPUT"))
+            Path(orchestrator.get_dataset_specific_output_directory("BUILDINGS_OUTPUT"))
+        )
 
         building_processor.process(
             census_data,
             osm_data,
             microsoft_buildings_data,
-            nrel_data["vintage_distribution"]
+            nrel_data["vintage_distribution"],
         )
 
         # --- STEP 7: ROUTABLE ROAD NETWORK GENERATION ---
@@ -155,30 +155,20 @@ def run_full_pipeline(
         _ = road_network_builder.process()
 
         logger.info("--------------------------------")
-        logger.info(
-            " ✓ Data Import Pipeline for Target Region completed successfully.")
+        logger.info(" ✓ Data Import Pipeline for Target Region completed successfully.")
 
     except ValueError as ve:
-        logger.error(
-            f"Configuration or validation error during pipeline: {ve}",
-            exc_info=True)
+        logger.error(f"Configuration or validation error during pipeline: {ve}", exc_info=True)
     except RuntimeError as re:
-        logger.error(
-            f"Runtime error during pipeline execution: {re}",
-            exc_info=True)
+        logger.error(f"Runtime error during pipeline execution: {re}", exc_info=True)
     except Exception as e:
-        logger.error(
-            f"An unexpected error occurred in the pipeline: {e}",
-            exc_info=True)
+        logger.error(f"An unexpected error occurred in the pipeline: {e}", exc_info=True)
     finally:
         # Calculate and log total execution time
         end_time = time.time()
         total_time = end_time - start_time
 
-        logger.info(
-            "Import Pipeline completed in "
-            f"{total_time} seconds"
-        )
+        logger.info("Import Pipeline completed in " f"{total_time} seconds")
 
 
 if __name__ == "__main__":

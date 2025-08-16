@@ -6,9 +6,9 @@
 # counties: Autauga County, 003 = Baldwin County, etc.
 # count_subdivisions: Autaugaville CCD, if empty = "" the whole county is used
 REGION:
-  STATE: "MA" 
-  COUNTY: "Middlesex County" 
-  COUNTY_SUBDIVISION: "Cambridge city" 
+  STATE: "MA"
+  COUNTY: "Middlesex County"
+  COUNTY_SUBDIVISION: "Cambridge city"
   LOOKUP_URL: https://www2.census.gov/geo/docs/reference/codes/files/national_cousub.txt
 
 # Input data file paths - UPDATE THESE PATHS FOR YOUR DATA
@@ -21,7 +21,7 @@ INPUT_DATA:
   NREL_FILE: "/Users/magic-rabbit/Library/Mobile Documents/com~apple~CloudDocs/01_University/06_MIT_Stay/Master_Thesis/02_Data/GridTracer/Input/NREL_Residential_typology.tsv"
 
 # Base output directory
-OUTPUT_DIR: "output/"  
+OUTPUT_DIR: "output/"
 
 # EPSG code for spatial data.
 # 3035 is for Europe (ETRS89-extended / LAEA Europe)

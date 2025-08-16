@@ -4,9 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 
-def create_logger(
-    name: str, log_level: int = logging.INFO, log_file: Optional[str] = None
-) -> logging.Logger:
+def create_logger(name: str, log_level: int = logging.INFO, log_file: Optional[str] = None) -> logging.Logger:
     """Create a configured logger instance.
 
     Args:
@@ -25,9 +23,7 @@ def create_logger(
     logger.handlers.clear()
     logger.propagate = False
 
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     # Always add a console handler
     console_handler = logging.StreamHandler(sys.stdout)

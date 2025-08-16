@@ -4,7 +4,7 @@ import tempfile
 import urllib.request
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import geopandas as gpd
 import pandas as pd
@@ -62,7 +62,7 @@ class CountySubdivisionHandler(DataHandler):
         Returns:
             pd.DataFrame: A DataFrame containing the processed FIPS data.
         """
-        with open(file_path, "r", encoding="latin-1") as infile:
+        with open(file_path, encoding="latin-1") as infile:
             reader = csv.reader(infile)
             processed_rows = []
             for i, row in enumerate(reader):
@@ -85,9 +85,7 @@ class CountySubdivisionHandler(DataHandler):
         ]
         return pd.DataFrame(processed_rows, columns=column_names)
 
-    def _download_and_read_shapefile(
-        self, url: str
-    ) -> Optional[gpd.GeoDataFrame]:
+    def _download_and_read_shapefile(self, url: str) -> Optional[gpd.GeoDataFrame]:
         """
         Downloads and reads a zipped shapefile from a URL.
 
@@ -98,7 +96,7 @@ class CountySubdivisionHandler(DataHandler):
             Optional[gpd.GeoDataFrame]: A GeoDataFrame if successful, else None.
         """
         try:
-            with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp_file:
+            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_file:
                 urllib.request.urlretrieve(url, tmp_file.name)
 
                 # Read the downloaded file
@@ -111,8 +109,7 @@ class CountySubdivisionHandler(DataHandler):
             self.logger.error(f"Failed to download or read {url}: {e}")
             return None
 
-    def _process_state(
-            self, state_df: pd.DataFrame) -> Tuple[pd.DataFrame, List[Dict]]:
+    def _process_state(self, state_df: pd.DataFrame) -> Tuple[pd.DataFrame, List[Dict]]:
         """
         Processes all county subdivisions for a single state to add population,
         area, and geometry.
@@ -128,27 +125,20 @@ class CountySubdivisionHandler(DataHandler):
         """
         state_fips = state_df["state_fips"].iloc[0]
         state_abbr = state_df["state_abbr"].iloc[0]
-        self.logger.info(
-            f"--- Processing State: {state_abbr} (FIPS: {state_fips}) ---"
-        )
+        self.logger.info(f"--- Processing State: {state_abbr} (FIPS: {state_fips}) ---")
 
         # 1. Download state-wide data ONCE
         base_url = "https://www2.census.gov/geo/tiger/TIGER2020"
         cousub_url = f"{base_url}/COUSUB/tl_2020_{state_fips}_cousub.zip"
         all_cousubs_gdf = self._download_and_read_shapefile(cousub_url)
         if all_cousubs_gdf is None:
-            self.logger.warning(
-                f"Could not load subdivisions for state {state_fips}, "
-                "skipping."
-            )
+            self.logger.warning(f"Could not load subdivisions for state {state_fips}, " "skipping.")
             return pd.DataFrame(), []
 
         blocks_url = f"{base_url}/TABBLOCK20/tl_2020_{state_fips}_tabblock20.zip"
         all_blocks_gdf = self._download_and_read_shapefile(blocks_url)
         if all_blocks_gdf is None:
-            self.logger.warning(
-                f"Could not load blocks for state {state_fips}, skipping."
-            )
+            self.logger.warning(f"Could not load blocks for state {state_fips}, skipping.")
             return pd.DataFrame(), []
 
         results = []
@@ -156,34 +146,23 @@ class CountySubdivisionHandler(DataHandler):
         # Group by county to process one county at a time
         for county_fips, group in state_df.groupby("county_fips"):
             # Filter state-wide data for the current county
-            county_cousubs_gdf = all_cousubs_gdf[
-                all_cousubs_gdf["COUNTYFP"] == county_fips
-            ]
+            county_cousubs_gdf = all_cousubs_gdf[all_cousubs_gdf["COUNTYFP"] == county_fips]
 
-            fips_col = ("COUNTYFP20"
-                        if "COUNTYFP20" in all_blocks_gdf.columns
-                        else "COUNTYFP")
-            county_blocks_gdf = all_blocks_gdf[
-                all_blocks_gdf[fips_col] == county_fips
-            ]
+            fips_col = "COUNTYFP20" if "COUNTYFP20" in all_blocks_gdf.columns else "COUNTYFP"
+            county_blocks_gdf = all_blocks_gdf[all_blocks_gdf[fips_col] == county_fips]
 
             if county_blocks_gdf.empty:
-                self.logger.warning(
-                    f"  No blocks found for county {county_fips}, skipping."
-                )
+                self.logger.warning(f"  No blocks found for county {county_fips}, skipping.")
                 continue
 
             # Process each subdivision in the county
             for _, row in group.iterrows():
                 subdiv_fips = row["subdivision_fips"]
-                subdivision_geom_df = county_cousubs_gdf[
-                    county_cousubs_gdf["COUSUBFP"] == subdiv_fips
-                ]
+                subdivision_geom_df = county_cousubs_gdf[county_cousubs_gdf["COUSUBFP"] == subdiv_fips]
 
                 if subdivision_geom_df.empty:
                     self.logger.warning(
-                        f"    Subdivision {subdiv_fips} "
-                        f"({row['subdivision_name']}) not found in shapefile."
+                        f"    Subdivision {subdiv_fips} " f"({row['subdivision_name']}) not found in shapefile."
                     )
                     not_found_subdivisions.append(
                         {
@@ -197,26 +176,18 @@ class CountySubdivisionHandler(DataHandler):
                 # Clip blocks to the subdivision geometry.
                 # Align CRS if necessary.
                 if county_blocks_gdf.crs != subdivision_geom_df.crs:
-                    county_blocks_gdf = county_blocks_gdf.to_crs(
-                        subdivision_geom_df.crs
-                    )
+                    county_blocks_gdf = county_blocks_gdf.to_crs(subdivision_geom_df.crs)
 
-                clipped_blocks = gpd.clip(
-                    county_blocks_gdf, subdivision_geom_df)
+                clipped_blocks = gpd.clip(county_blocks_gdf, subdivision_geom_df)
 
                 # --- Augment Data ---
-                regional_identifier = (
-                    f"{row['state_fips']}{row['county_fips']}"
-                    f"{row['subdivision_fips']}"
-                )
+                regional_identifier = f"{row['state_fips']}{row['county_fips']}" f"{row['subdivision_fips']}"
                 population = clipped_blocks["POP20"].astype(int).sum()
 
                 # Unify geometry and project to EPSG for area calculation
                 # and output
                 unified_geom = unary_union(subdivision_geom_df.geometry)
-                projected_gds = gpd.GeoSeries(
-                    [unified_geom], crs=subdivision_geom_df.crs
-                ).to_crs(f"EPSG:{EPSG}")
+                projected_gds = gpd.GeoSeries([unified_geom], crs=subdivision_geom_df.crs).to_crs(f"EPSG:{EPSG}")
                 projected_geom = projected_gds.iloc[0]
 
                 # Calculate area and get WKB from the projected geometry
@@ -235,8 +206,7 @@ class CountySubdivisionHandler(DataHandler):
 
         return pd.DataFrame(results), not_found_subdivisions
 
-    def process_state(
-            self, args: Tuple[pd.DataFrame, Path, str]) -> List[Dict]:
+    def process_state(self, args: Tuple[pd.DataFrame, Path, str]) -> List[Dict]:
         """
         A wrapper function for a single worker process.
         Processes a state and saves the resulting chunk file.
@@ -254,9 +224,7 @@ class CountySubdivisionHandler(DataHandler):
                 augmented_df.to_csv(chunk_path, index=False)
             return not_found_list
         except Exception as e:
-            self.logger.error(
-                f"Error processing state {state_abbr}: {e}", exc_info=True
-            )
+            self.logger.error(f"Error processing state {state_abbr}: {e}", exc_info=True)
             return [
                 {
                     "state": state_abbr,
@@ -274,33 +242,25 @@ class CountySubdivisionHandler(DataHandler):
         """
         if all_not_found:
             total_not_found = len(all_not_found)
-            self.logger.info(
-                f"Found {total_not_found} subdivisions that were not "
-                "in the shapefiles."
-            )
+            self.logger.info(f"Found {total_not_found} subdivisions that were not " "in the shapefiles.")
             not_found_df = pd.DataFrame(all_not_found)
             # Reorder columns for clarity
-            not_found_df = not_found_df[
-                ["state", "subdivision_fips", "subdivision_name"]
-            ]
+            not_found_df = not_found_df[["state", "subdivision_fips", "subdivision_name"]]
             log_path = self.dataset_output_dir / "Subdivisions_not_found_log.txt"
 
             with open(log_path, "w") as f:
                 f.write(f"Total Subdivisions Not Found: {total_not_found}\n\n")
                 f.write(not_found_df.to_string(index=False))
 
-    def download(self) -> Dict[str, any]:
+    def download(self) -> Dict[str, Any]:
         """
         Download and process subcounty segmentation data.
 
         Returns:
-            Dict[str, any]: Dictionary containing processed data and file paths.
+            Dict[str, Any]: Dictionary containing processed data and file paths.
         """
         # URL for the national county subdivision lookup file
-        lookup_url = (
-            "https://www2.census.gov/geo/docs/reference/codes/files/"
-            "national_cousub.txt"
-        )
+        lookup_url = "https://www2.census.gov/geo/docs/reference/codes/files/" "national_cousub.txt"
 
         # Download to the base output directory (output/) level
         base_output_dir = Path(OUTPUT_DIR)
@@ -311,11 +271,7 @@ class CountySubdivisionHandler(DataHandler):
 
         return {"fips_data": fips_df, "fips_file": local_fips_file}
 
-    def process(
-        self,
-        state_filter: Optional[str] = None,
-        num_processes: int = 4
-    ) -> Dict[str, any]:
+    def process(self, state_filter: Optional[str] = None, num_processes: int = 4) -> Dict[str, Any]:
         """
         Process subcounty segmentation data for all states or a specific state.
 
@@ -325,16 +281,14 @@ class CountySubdivisionHandler(DataHandler):
             num_processes (int): Number of parallel processes to use.
 
         Returns:
-            Dict[str, any]: Dictionary containing results and file paths.
+            Dict[str, Any]: Dictionary containing results and file paths.
         """
         # Check if final output files already exist
         if state_filter:
             state_abbr_upper = state_filter.upper()
-            final_output_path = self.dataset_output_dir / \
-                f"{state_abbr_upper}_census_subdivisions.csv"
+            final_output_path = self.dataset_output_dir / f"{state_abbr_upper}_census_subdivisions.csv"
             if final_output_path.exists():
-                self.logger.info(
-                    f"Segmentation file already exists for {state_abbr_upper}")
+                self.logger.info(f"Segmentation file already exists for {state_abbr_upper}")
                 return {
                     "output_file": final_output_path,
                     "not_found": [],
@@ -343,8 +297,7 @@ class CountySubdivisionHandler(DataHandler):
             # Check for national file
             national_output_path = self.dataset_output_dir / "US_census_subdivisions.csv"
             if national_output_path.exists():
-                self.logger.info(
-                    f"National segmentation file already exists: {national_output_path}")
+                self.logger.info(f"National segmentation file already exists: {national_output_path}")
                 return {
                     "output_file": national_output_path,
                     "not_found": [],
@@ -364,8 +317,7 @@ class CountySubdivisionHandler(DataHandler):
                 )
                 return {"error": f"Invalid state: {state_filter}"}
             fips_df = fips_df[fips_df["state_abbr"] == state_abbr_upper].copy()
-            self.logger.info(
-                f"Processing state: {state_abbr_upper}")
+            self.logger.info(f"Processing state: {state_abbr_upper}")
 
         # Only create chunks directory for all-states processing
         if state_filter is None:
@@ -380,9 +332,7 @@ class CountySubdivisionHandler(DataHandler):
         # Prepare arguments for parallel processing
         tasks = []
         for state_fips in all_state_fips:
-            state_abbr = fips_df[fips_df["state_fips"] == state_fips][
-                "state_abbr"
-            ].iloc[0]
+            state_abbr = fips_df[fips_df["state_fips"] == state_fips]["state_abbr"].iloc[0]
 
             # For single state, write directly to final output
             if state_filter:
@@ -392,9 +342,7 @@ class CountySubdivisionHandler(DataHandler):
                 chunk_path = chunks_directory / f"{state_abbr}_census_chunk.csv"
 
             if chunk_path.exists():
-                self.logger.info(
-                    f"Chunk for state {state_abbr} already exists. Skipping."
-                )
+                self.logger.info(f"Chunk for state {state_abbr} already exists. Skipping.")
                 continue
 
             state_df = fips_df[fips_df["state_fips"] == state_fips].copy()
@@ -407,15 +355,13 @@ class CountySubdivisionHandler(DataHandler):
             with Pool(min(num_processes, len(tasks))) as pool:
                 results = list(
                     tqdm(
-                        pool.imap_unordered(
-                            self.process_state,
-                            tasks),
+                        pool.imap_unordered(self.process_state, tasks),
                         total=len(tasks),
-                        desc="Processing All States"))
+                        desc="Processing All States",
+                    )
+                )
         # Flatten the list of lists of not-found subdivisions
-        all_not_found = [
-            item for sublist in results if sublist for item in sublist
-        ]
+        all_not_found = [item for sublist in results if sublist for item in sublist]
 
         # Write the log of not-found subdivisions (do this before returns)
         self._write_not_found_log(all_not_found)
@@ -424,29 +370,20 @@ class CountySubdivisionHandler(DataHandler):
         if state_filter:
             # For single state, the file is already at the final location
             state_abbr_upper = state_filter.upper()
-            final_output_path = (
-                self.dataset_output_dir
-                / f"{state_abbr_upper}_census_subdivisions.csv"
-            )
+            final_output_path = self.dataset_output_dir / f"{state_abbr_upper}_census_subdivisions.csv"
             if final_output_path.exists():
-                self.logger.info(
-                    f"Processing complete. Final output saved to: "
-                    f"{final_output_path}"
-                )
+                self.logger.info(f"Processing complete. Final output saved to: " f"{final_output_path}")
                 return {
                     "output_file": final_output_path,
                     "not_found": all_not_found,
                 }
             else:
-                self.logger.warning(
-                    f"No output file was generated for state {state_abbr_upper}."
-                )
+                self.logger.warning(f"No output file was generated for state {state_abbr_upper}.")
                 return {"error": f"No output for state {state_abbr_upper}"}
 
         else:
             # Combine all chunks into one file
-            self.logger.info(
-                "Combining all state chunks into a single file...")
+            self.logger.info("Combining all state chunks into a single file...")
             all_chunks = []
             for chunk_file in tqdm(
                 sorted(chunks_directory.glob("*_census_chunk.csv")),
@@ -456,21 +393,14 @@ class CountySubdivisionHandler(DataHandler):
 
             if all_chunks:
                 final_df = pd.concat(all_chunks, ignore_index=True)
-                output_csv_path = (
-                    self.dataset_output_dir / "US_census_subdivisions.csv"
-                )
+                output_csv_path = self.dataset_output_dir / "US_census_subdivisions.csv"
                 final_df.to_csv(output_csv_path, index=False)
-                self.logger.info(
-                    f"Processing complete. Final output saved to: "
-                    f"{output_csv_path}"
-                )
+                self.logger.info(f"Processing complete. Final output saved to: " f"{output_csv_path}")
                 return {
                     "output_file": output_csv_path,
                     "not_found": all_not_found,
                     "data": final_df,
                 }
             else:
-                self.logger.warning(
-                    "No chunks were generated. Final file not created."
-                )
+                self.logger.warning("No chunks were generated. Final file not created.")
                 return {"error": "No chunks generated"}

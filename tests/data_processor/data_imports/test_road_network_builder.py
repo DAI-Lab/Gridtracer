@@ -20,23 +20,20 @@ def mock_osm_data():
     """Create mock OSM data for testing."""
     geometries = [LineString([(0, 0), (1, 1)])]
     data = {
-        'osm_id': [12345],
-        'highway': ['residential'],
-        'name': ['Test Road'],
-        'oneway': ['no'],
-        'u': [1],  # source node id
-        'v': [2],  # target node id
-        'length': [1000]  # 1 km in meters
+        "osm_id": [12345],
+        "highway": ["residential"],
+        "name": ["Test Road"],
+        "oneway": ["no"],
+        "u": [1],  # source node id
+        "v": [2],  # target node id
+        "length": [1000],  # 1 km in meters
     }
     edges = gpd.GeoDataFrame(data, geometry=geometries, crs="EPSG:3857")  # Use projected CRS
 
     # Create nodes as GeoDataFrame with point geometries
     from shapely.geometry import Point
-    nodes_data = {
-        'id': [1, 2],
-        'lat': [0, 1],
-        'lon': [0, 1]
-    }
+
+    nodes_data = {"id": [1, 2], "lat": [0, 1], "lon": [0, 1]}
     nodes_geom = [Point(0, 0), Point(1, 1)]
     nodes = gpd.GeoDataFrame(nodes_data, geometry=nodes_geom, crs="EPSG:3857")  # Use projected CRS
 
@@ -75,27 +72,29 @@ def mock_orchestrator_for_road_network(orchestrator_with_fips, temp_output_dir, 
 @pytest.fixture
 def road_network_builder(mock_orchestrator_for_road_network):
     """Create a RoadNetworkBuilder with a mocked orchestrator and config."""
-    with patch('gridtracer.data.imports.osm.road_network_builder.yaml.safe_load') as mock_yaml:
+    with patch("gridtracer.data.imports.osm.road_network_builder.yaml.safe_load") as mock_yaml:
         # Mock the YAML config for road_network_config.yaml
         mock_yaml.return_value = {
-            'way_tag_resolver': {
-                'tags': {
-                    'residential': {'clazz': 41, 'maxspeed': 40, 'flags': ['car', 'bike']}
+            "way_tag_resolver": {
+                "tags": {
+                    "residential": {
+                        "clazz": 41,
+                        "maxspeed": 40,
+                        "flags": ["car", "bike"],
+                    }
                 },
-                'flag_list': ['car', 'bike', 'foot']
+                "flag_list": ["car", "bike", "foot"],
             },
-            'osm_pbf_file': None,
-            'output_dir': 'sql_output_chunks'
+            "osm_pbf_file": None,
+            "output_dir": "sql_output_chunks",
         }
 
         # The RoadNetworkBuilder now takes the orchestrator directly
         builder = RoadNetworkBuilder(orchestrator=mock_orchestrator_for_road_network)
 
         # Ensure dataset_output_dir is set correctly for tests
-        builder.dataset_output_dir = (
-            mock_orchestrator_for_road_network.get_dataset_specific_output_directory(
-                "ROAD_NETWORK"
-            )
+        builder.dataset_output_dir = mock_orchestrator_for_road_network.get_dataset_specific_output_directory(
+            "ROAD_NETWORK"
         )
         builder.dataset_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -107,16 +106,16 @@ def test_load_config(road_network_builder):
     config = road_network_builder.config
 
     # Check key config sections
-    assert 'way_tag_resolver' in config
-    assert 'tags' in config['way_tag_resolver']
+    assert "way_tag_resolver" in config
+    assert "tags" in config["way_tag_resolver"]
 
     # Check tag configuration
-    tags = config['way_tag_resolver']['tags']
-    assert 'residential' in tags
-    assert tags['residential']['clazz'] == 41
-    assert tags['residential']['maxspeed'] == 40
-    assert 'car' in tags['residential']['flags']
-    assert 'bike' in tags['residential']['flags']
+    tags = config["way_tag_resolver"]["tags"]
+    assert "residential" in tags
+    assert tags["residential"]["clazz"] == 41
+    assert tags["residential"]["maxspeed"] == 40
+    assert "car" in tags["residential"]["flags"]
+    assert "bike" in tags["residential"]["flags"]
 
 
 def test_resolve_way_tags(road_network_builder, mock_osm_data):
@@ -126,14 +125,14 @@ def test_resolve_way_tags(road_network_builder, mock_osm_data):
 
     # Test resolving residential road
     result_gdf = road_network_builder._resolve_way_tags(edges)
-    assert 'clazz' in result_gdf.columns
-    assert 'kmh' in result_gdf.columns
-    assert 'flags_set' in result_gdf.columns
-    assert result_gdf['clazz'].iloc[0] == 41
-    assert result_gdf['kmh'].iloc[0] == 40
+    assert "clazz" in result_gdf.columns
+    assert "kmh" in result_gdf.columns
+    assert "flags_set" in result_gdf.columns
+    assert result_gdf["clazz"].iloc[0] == 41
+    assert result_gdf["kmh"].iloc[0] == 40
 
     # Test with empty GeoDataFrame
-    empty_gdf = gpd.GeoDataFrame([], columns=edges.columns, geometry='geometry', crs=edges.crs)
+    empty_gdf = gpd.GeoDataFrame([], columns=edges.columns, geometry="geometry", crs=edges.crs)
     empty_result = road_network_builder._resolve_way_tags(empty_gdf)
     assert len(empty_result) == 0
 
@@ -144,13 +143,13 @@ def test_flags_to_int(road_network_builder):
     assert road_network_builder._flags_to_int(set()) == 0
 
     # Test with one flag
-    assert road_network_builder._flags_to_int({'car'}) == 1  # 2^0
+    assert road_network_builder._flags_to_int({"car"}) == 1  # 2^0
 
     # Test with multiple flags
-    assert road_network_builder._flags_to_int({'car', 'bike'}) == 3  # 2^0 + 2^1
+    assert road_network_builder._flags_to_int({"car", "bike"}) == 3  # 2^0 + 2^1
 
     # Test with all flags
-    assert road_network_builder._flags_to_int({'car', 'bike', 'foot'}) == 7  # 2^0 + 2^1 + 2^2
+    assert road_network_builder._flags_to_int({"car", "bike", "foot"}) == 7  # 2^0 + 2^1 + 2^2
 
 
 def test_build_network(road_network_builder, mock_osm_data):
@@ -159,7 +158,7 @@ def test_build_network(road_network_builder, mock_osm_data):
     # that returns mock_osm_data.
 
     # Mock the to_graph and ox.simplification.simplify_graph calls
-    with patch('gridtracer.data.imports.osm.road_network_builder.ox') as mock_ox:
+    with patch("gridtracer.data.imports.osm.road_network_builder.ox") as mock_ox:
         # Mock the simplify_graph and graph_to_gdfs calls
         mock_simplified_graph = MagicMock()
         mock_ox.simplification.simplify_graph.return_value = mock_simplified_graph
@@ -174,23 +173,22 @@ def test_build_network(road_network_builder, mock_osm_data):
         road_network_builder.orchestrator.get_osm_parser.assert_called_once()
         # Verify the mock OSM parser's get_network was called
         mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
-        mock_osm_parser_instance.get_network.assert_called_once_with(
-            nodes=True, network_type='driving')
+        mock_osm_parser_instance.get_network.assert_called_once_with(nodes=True, network_type="driving")
 
         # Check results - nodes might not be explicitly returned by build_network
         # Depending on the RoadNetworkBuilder.build_network implementation,
         # 'nodes' key might not be in results. Update as per actual implementation.
         # assert results['nodes'] is not None
-        assert results['edges'] is not None
-        assert results['sql_file'] is not None
-        assert results['geojson_file'] is not None  # Changed from raw_edges_file
+        assert results["edges"] is not None
+        assert results["sql_file"] is not None
+        assert results["geojson_file"] is not None  # Changed from raw_edges_file
 
         # Verify files were created
-        assert os.path.exists(results['sql_file'])
-        assert os.path.exists(results['geojson_file'])  # Changed from raw_edges_file
+        assert os.path.exists(results["sql_file"])
+        assert os.path.exists(results["geojson_file"])  # Changed from raw_edges_file
 
         # Check SQL file content
-        with open(results['sql_file'], 'r') as f:
+        with open(results["sql_file"]) as f:
             sql_content = f.read()
             # Check for key SQL elements
             assert "CREATE TABLE road_network" in sql_content
@@ -203,7 +201,7 @@ def test_process_method(road_network_builder, mock_osm_data):
     # The mock_orchestrator already provides the mock OSM parser
 
     # Mock the to_graph and ox.simplification.simplify_graph calls
-    with patch('gridtracer.data.imports.osm.road_network_builder.ox') as mock_ox:
+    with patch("gridtracer.data.imports.osm.road_network_builder.ox") as mock_ox:
         # Mock the simplify_graph and graph_to_gdfs calls
         mock_simplified_graph = MagicMock()
         mock_ox.simplification.simplify_graph.return_value = mock_simplified_graph
@@ -218,14 +216,13 @@ def test_process_method(road_network_builder, mock_osm_data):
         road_network_builder.orchestrator.get_osm_parser.assert_called_once()
         mock_osm_parser_instance = road_network_builder.orchestrator.get_osm_parser()
         # The process method calls build_network, which calls get_network
-        mock_osm_parser_instance.get_network.assert_called_once_with(
-            nodes=True, network_type='driving')
+        mock_osm_parser_instance.get_network.assert_called_once_with(nodes=True, network_type="driving")
 
         # Verify results
         # assert results['nodes'] is not None # Check if 'nodes' is expected
-        assert results['edges'] is not None
-        assert results['sql_file'] is not None
-        assert 'edges' in results  # Changed from 'clipped_edges'
+        assert results["edges"] is not None
+        assert results["sql_file"] is not None
+        assert "edges" in results  # Changed from 'clipped_edges'
 
 
 def test_process_and_write_edges(road_network_builder, mock_osm_data):
@@ -246,7 +243,7 @@ def test_process_and_write_edges(road_network_builder, mock_osm_data):
     assert "INSERT INTO road_network" in full_sql
 
     # Test with empty GeoDataFrame
-    empty_gdf = gpd.GeoDataFrame([], columns=edges.columns, geometry='geometry', crs=edges.crs)
+    empty_gdf = gpd.GeoDataFrame([], columns=edges.columns, geometry="geometry", crs=edges.crs)
     empty_result = road_network_builder._process_and_write_edges(empty_gdf)
     assert isinstance(empty_result, list)
 
@@ -262,10 +259,10 @@ def test_fips_integration(road_network_builder):
 
     # Verify FIPS data is accessible and has expected structure
     assert fips_dict is not None
-    assert 'state' in fips_dict
-    assert 'county' in fips_dict
-    assert fips_dict['state'] == 'MA'  # From the shared fixture
-    assert fips_dict['state_fips'] == '25'
+    assert "state" in fips_dict
+    assert "county" in fips_dict
+    assert fips_dict["state"] == "MA"  # From the shared fixture
+    assert fips_dict["state_fips"] == "25"
 
 
 def test_download_method_not_implemented(road_network_builder):

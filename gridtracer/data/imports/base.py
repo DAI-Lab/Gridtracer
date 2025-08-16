@@ -7,9 +7,7 @@ for downloading, processing, and saving different types of data sources.
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
-
-import geopandas as gpd
+from typing import TYPE_CHECKING, Any
 
 from gridtracer.config.config_loader import LOG_FILE, LOG_LEVEL
 from gridtracer.utils import create_logger
@@ -27,7 +25,7 @@ class DataHandler(ABC):
     for accessing shared configuration, FIPS data, and pre-defined output paths.
     """
 
-    def __init__(self, orchestrator: 'WorkflowOrchestrator'):
+    def __init__(self, orchestrator: "WorkflowOrchestrator"):
         """
         Initialize the DataHandler.
 
@@ -45,12 +43,9 @@ class DataHandler(ABC):
         self.dataset_name: str = self._get_dataset_name()
         # Get the pre-created dataset-specific output directory from the
         # orchestrator
-        self.dataset_output_dir: Path = self.orchestrator.get_dataset_specific_output_directory(
-            self.dataset_name
-        )
+        self.dataset_output_dir: Path = self.orchestrator.get_dataset_specific_output_directory(self.dataset_name)
         self.logger.debug(
-            f"DataHandler for '{self.dataset_name}' initialized. "
-            f"Output dir: {self.dataset_output_dir}"
+            f"DataHandler for '{self.dataset_name}' initialized. " f"Output dir: {self.dataset_output_dir}"
         )
 
     @abstractmethod
@@ -64,7 +59,7 @@ class DataHandler(ABC):
         """
 
     @abstractmethod
-    def download(self):
+    def download(self) -> Any:
         """
         Download the data for the region.
         Implementations should use `self.orchestrator` for region details and paths.
@@ -74,17 +69,12 @@ class DataHandler(ABC):
         """
 
     @abstractmethod
-    def process(self, boundary_gdf: Optional[gpd.GeoDataFrame] = None):
+    def process(self) -> Any:
         """
         Process the data for the region.
 
         This method should implement the complete data processing workflow for
         the specific data source, including downloading, transforming, and saving.
-        It should use `self.orchestrator` to get the region boundary if `boundary_gdf` is None.
-
-        Args:
-            boundary_gdf (Optional[GeoDataFrame]): Boundary to use for clipping.
-                If None, the method should attempt to get it from `self.orchestrator.get_region_boundary()`.
 
         Returns:
             dict: Dictionary containing processed data and file paths.

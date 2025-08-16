@@ -5,7 +5,8 @@ This module provides functionality to extract building, POI, and power infrastru
 from OpenStreetMap using pyrosm via PYROSM from the WorkflowOrchestrator.
 """
 
-from typing import TYPE_CHECKING, Any, Dict
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 import geopandas as gpd
 from pyrosm import OSM
@@ -20,20 +21,17 @@ if TYPE_CHECKING:
 MAX_VOLTAGE = 70_000
 DEDUPLICATION_THRESHOLD_IN_METERS = 15
 
-LANDUSE_TAGS = set([
-    "landuse",
-    "name"
-])
+LANDUSE_TAGS = {"landuse", "name"}
 
 POI_TAGS = {
     "amenity": True,
     "shop": True,
     "tourism": True,
     "leisure": True,
-    "office": True
+    "office": True,
 }
 
-BUILDINGS_TAGS = set([
+BUILDINGS_TAGS = {
     "element",
     "id",
     "addr:housenumber",
@@ -100,8 +98,8 @@ BUILDINGS_TAGS = set([
     "renovation",
     "house",
     "maxheight",
-    "building:floor"
-])
+    "building:floor",
+}
 
 
 class OSMDataHandler(DataHandler):
@@ -112,7 +110,7 @@ class OSMDataHandler(DataHandler):
     from OpenStreetMap using pyrosm via a shared parser from the WorkflowOrchestrator.
     """
 
-    def __init__(self, orchestrator: 'WorkflowOrchestrator'):
+    def __init__(self, orchestrator: "WorkflowOrchestrator"):
         """
         Initialize the OSM data handler.
 
@@ -130,8 +128,7 @@ class OSMDataHandler(DataHandler):
         """
         return "OSM"
 
-    def deduplicate_power_features(
-            self, power_gdf, distance_threshold_meters=DEDUPLICATION_THRESHOLD_IN_METERS):
+    def deduplicate_power_features(self, power_gdf, distance_threshold_meters=DEDUPLICATION_THRESHOLD_IN_METERS):
         """
         Deduplicate power infrastructure features that are within a distance threshold.
 
@@ -146,21 +143,18 @@ class OSMDataHandler(DataHandler):
         if power_gdf is None or power_gdf.empty:
             return power_gdf
 
-        self.logger.info(
-            f"Deduplicating power features (threshold: {distance_threshold_meters}m)")
+        self.logger.info(f"Deduplicating power features (threshold: {distance_threshold_meters}m)")
         len(power_gdf)
 
         # calculations
-        power_projected = power_gdf.to_crs(f'EPSG:{EPSG}')
+        power_projected = power_gdf.to_crs(f"EPSG:{EPSG}")
 
         # Define priority: substation > transformer > pole
-        power_priority = {'substation': 3, 'transformer': 2, 'pole': 1}
-        power_projected['priority'] = power_projected['power'].map(
-            power_priority).fillna(0)
+        power_priority = {"substation": 3, "transformer": 2, "pole": 1}
+        power_projected["priority"] = power_projected["power"].map(power_priority).fillna(0)
 
         # Sort by priority (highest first) to process important features first
-        power_sorted = power_projected.sort_values(
-            'priority', ascending=False).reset_index()
+        power_sorted = power_projected.sort_values("priority", ascending=False).reset_index()
 
         # Track which features to keep
         selected_indices = []
@@ -169,14 +163,13 @@ class OSMDataHandler(DataHandler):
         for _, row in power_sorted.iterrows():
             current_geom = row.geometry
             # This is the original index from power_gdf
-            original_idx = row['index']
+            original_idx = row["index"]
 
             # Check if this feature is too close to any already selected
             # feature
             is_duplicate = False
             for selected_geom in processed_geometries:
-                if current_geom.distance(
-                        selected_geom) <= distance_threshold_meters:
+                if current_geom.distance(selected_geom) <= distance_threshold_meters:
                     is_duplicate = True
                     break
 
@@ -190,8 +183,7 @@ class OSMDataHandler(DataHandler):
 
         return deduplicated_gdf
 
-    def filter_by_voltage(self, power_gdf: gpd.GeoDataFrame,
-                          max_voltage: float = MAX_VOLTAGE) -> gpd.GeoDataFrame:
+    def filter_by_voltage(self, power_gdf: gpd.GeoDataFrame, max_voltage: float = MAX_VOLTAGE) -> gpd.GeoDataFrame:
         """
         Filter out high-voltage transmission infrastructure by checking the 'voltage' tag.
 
@@ -202,13 +194,11 @@ class OSMDataHandler(DataHandler):
         Returns:
             GeoDataFrame: Filtered GeoDataFrame
         """
-        self.logger.info(
-            f"Filtering power features by voltage (max: {max_voltage} Volts)")
+        self.logger.info(f"Filtering power features by voltage (max: {max_voltage} Volts)")
 
         # If 'tags' column doesn't exist, there's nothing to filter by voltage.
-        if 'tags' not in power_gdf.columns:
-            self.logger.warning(
-                "No 'tags' column found, skipping voltage filtering.")
+        if "tags" not in power_gdf.columns:
+            self.logger.warning("No 'tags' column found, skipping voltage filtering.")
             return power_gdf
 
         def parse_voltage_simple(voltage_str):
@@ -216,8 +206,8 @@ class OSMDataHandler(DataHandler):
                 return None
             try:
                 # Handle "132000;33000" format - take first value
-                if ';' in str(voltage_str):
-                    voltage_str = str(voltage_str).split(';')[0]
+                if ";" in str(voltage_str):
+                    voltage_str = str(voltage_str).split(";")[0]
                 # Handle "115000" format - just convert to int
                 return int(str(voltage_str).strip())
             except (ValueError, TypeError):
@@ -226,10 +216,10 @@ class OSMDataHandler(DataHandler):
         def get_voltage_from_tags(tags):
             if not isinstance(tags, dict):
                 return None
-            return parse_voltage_simple(tags.get('voltage'))
+            return parse_voltage_simple(tags.get("voltage"))
 
         # Get voltage values from the 'tags' column
-        voltage_values = power_gdf['tags'].apply(get_voltage_from_tags)
+        voltage_values = power_gdf["tags"].apply(get_voltage_from_tags)
 
         # Keep features with no voltage info or voltage <= threshold
         # Using Series.isna() is a robust way to check for both None and NaN
@@ -241,8 +231,7 @@ class OSMDataHandler(DataHandler):
 
         return power_gdf[voltage_mask]
 
-    def filter_transmission_tags(
-            self, power_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    def filter_transmission_tags(self, power_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Remove features tagged as transmission infrastructure.
         Simple check: skip if substation or transformer tag equals 'transmission'.
@@ -253,21 +242,20 @@ class OSMDataHandler(DataHandler):
         Returns:
             GeoDataFrame: Filtered GeoDataFrame
         """
+
         def is_transmission_feature(row):
             """
             Check if feature is transmission-level infrastructure.
             Simple check: substation == 'transmission' OR transformer == 'transmission'
             """
-            return (row.get('substation') == 'transmission'
-                    or row.get('transformer') == 'transmission')
+            return row.get("substation") == "transmission" or row.get("transformer") == "transmission"
 
         # Apply transmission filter
         transmission_mask = ~power_gdf.apply(is_transmission_feature, axis=1)
 
         return power_gdf[transmission_mask]
 
-    def remove_contained_points(
-            self, power_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    def remove_contained_points(self, power_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Remove point features that fall within polygon substations.
 
@@ -278,9 +266,8 @@ class OSMDataHandler(DataHandler):
             GeoDataFrame: Filtered GeoDataFrame
         """
         # Separate points and polygons
-        points = power_gdf[power_gdf.geometry.geom_type == 'Point'].copy()
-        polygons = power_gdf[power_gdf.geometry.geom_type.isin(
-            ['Polygon', 'MultiPolygon'])].copy()
+        points = power_gdf[power_gdf.geometry.geom_type == "Point"].copy()
+        polygons = power_gdf[power_gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
 
         if polygons.empty or points.empty:
             self.logger.info("No polygon-point conflicts to resolve")
@@ -295,8 +282,7 @@ class OSMDataHandler(DataHandler):
 
         return power_gdf.drop(indices_to_remove)
 
-    def convert_to_centroids(
-            self, power_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    def convert_to_centroids(self, power_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Convert all geometries to centroids (points only output).
 
@@ -309,24 +295,24 @@ class OSMDataHandler(DataHandler):
         self.logger.info("Converting all geometries to centroids")
 
         # calculation
-        power_projected = power_gdf.to_crs(f'EPSG:{EPSG}')
+        power_projected = power_gdf.to_crs(f"EPSG:{EPSG}")
 
         # Store original geometry type and area
-        power_projected['geom_type'] = power_projected.geometry.geom_type
-        power_projected['area'] = power_projected.geometry.apply(
-            lambda geom: (geom.area if hasattr(geom, 'area')
-                          and geom.geom_type in ['Polygon', 'MultiPolygon'] else 0)
+        power_projected["geom_type"] = power_projected.geometry.geom_type
+        power_projected["area"] = power_projected.geometry.apply(
+            lambda geom: (geom.area if hasattr(geom, "area") and geom.geom_type in ["Polygon", "MultiPolygon"] else 0)
         )
 
         # Convert all geometries to centroids
-        power_projected['geometry'] = power_projected.geometry.centroid
+        power_projected["geometry"] = power_projected.geometry.centroid
 
         # Convert back to WGS84 for final output
-        power_centroids = power_projected.to_crs('EPSG:4326')
+        power_centroids = power_projected.to_crs("EPSG:4326")
 
         self.logger.info(
             f"Converted {
-                len(power_centroids)} features to centroid points")
+                len(power_centroids)} features to centroid points"
+        )
 
         return power_centroids
 
@@ -336,22 +322,20 @@ class OSMDataHandler(DataHandler):
         Enhanced with voltage, area, and transmission filtering.
         """
         if osm_parser is None:
-            self.logger.error(
-                "OSM parser not available from orchestrator. Cannot extract power infrastructure.")
+            self.logger.error("OSM parser not available from orchestrator. Cannot extract power infrastructure.")
             return None, None
 
         power_tags = ["transformer", "substation", "pole"]
         # Extract power features
         power_features = osm_parser.get_data_by_custom_criteria(
-            custom_filter={
-                "power": power_tags},
+            custom_filter={"power": power_tags},
             keep_nodes=True,
             keep_ways=True,
-            keep_relations=True)
+            keep_relations=True,
+        )
 
         if power_features is None or power_features.empty:
-            self.logger.warning(
-                "No power infrastructure found in OpenStreetMap")
+            self.logger.warning("No power infrastructure found in OpenStreetMap")
             return None, None
 
         # Save RAW power features to file
@@ -360,8 +344,8 @@ class OSMDataHandler(DataHandler):
         power_features.to_file(raw_power_filepath, driver="GeoJSON")
 
         # Add element_type column based on geometry
-        power_features['element_type'] = power_features.geometry.apply(
-            lambda g: 'node' if isinstance(g, Point) else 'way'
+        power_features["element_type"] = power_features.geometry.apply(
+            lambda g: "node" if isinstance(g, Point) else "way"
         )
 
         # Step 1: Filter by voltage MAX_VOLTAGE
@@ -371,22 +355,20 @@ class OSMDataHandler(DataHandler):
         power_features = self.remove_contained_points(power_features)
 
         # Step 3: Keep transformers, substations, and all poles
-        final_mask = power_features['power'].isin(['transformer', 'substation', 'pole'])
+        final_mask = power_features["power"].isin(["transformer", "substation", "pole"])
         power_features = power_features[final_mask]
 
         # Step 4: Spatial deduplication
-        deduplicated_power_features = self.deduplicate_power_features(
-            power_features)
+        deduplicated_power_features = self.deduplicate_power_features(power_features)
 
         # Step 5: Filter by transmission tags
-        final_features = self.filter_transmission_tags(
-            deduplicated_power_features)
+        final_features = self.filter_transmission_tags(deduplicated_power_features)
 
         # Step 6: Convert all geometries to centroids (FINAL STEP)
         centroids_power_features = self.convert_to_centroids(final_features)
 
         # Add properties for output format
-        centroids_power_features['osm_id'] = centroids_power_features.apply(
+        centroids_power_features["osm_id"] = centroids_power_features.apply(
             lambda row: f"{row['element_type']}/{row.get('id', row.name)}", axis=1
         )
 
@@ -414,21 +396,17 @@ class OSMDataHandler(DataHandler):
             buildings_gdf = osm_parser.get_buildings()
 
             if buildings_gdf is None or buildings_gdf.empty:
-                self.logger.warning(
-                    "No buildings found by pyrosm parser for the given extent.")
+                self.logger.warning("No buildings found by pyrosm parser for the given extent.")
                 return None, None
 
-            self.logger.info(
-                f"Initially extracted {len(buildings_gdf)} building features using pyrosm.")
+            self.logger.info(f"Initially extracted {len(buildings_gdf)} building features using pyrosm.")
 
             raw_buildings_filepath = self.dataset_output_dir / "raw" / "raw_buildings.geojson"
-            raw_buildings_filepath.parent.mkdir(
-                parents=True, exist_ok=True)
+            raw_buildings_filepath.parent.mkdir(parents=True, exist_ok=True)
             buildings_gdf.to_file(raw_buildings_filepath, driver="GeoJSON")
-            self.logger.debug(
-                f"Saved raw extracted buildings to {raw_buildings_filepath}")
+            self.logger.debug(f"Saved raw extracted buildings to {raw_buildings_filepath}")
 
-            columns_to_keep = ['geometry', 'id']
+            columns_to_keep = ["geometry", "id"]
             available_cols = buildings_gdf.columns
             for col_name in BUILDINGS_TAGS:
                 if col_name in available_cols and col_name not in columns_to_keep:
@@ -437,20 +415,16 @@ class OSMDataHandler(DataHandler):
             processed_buildings_gdf = buildings_gdf.copy()  # Or apply column filtering
 
             if processed_buildings_gdf.empty:
-                self.logger.warning(
-                    "No buildings remained after processing/filtering.")
+                self.logger.warning("No buildings remained after processing/filtering.")
                 return None, None
 
             buildings_filepath = self.dataset_output_dir / "buildings.geojson"
-            processed_buildings_gdf.to_file(
-                buildings_filepath, driver="GeoJSON")
+            processed_buildings_gdf.to_file(buildings_filepath, driver="GeoJSON")
 
             return processed_buildings_gdf, buildings_filepath
 
         except Exception as e:
-            self.logger.error(
-                f"Error extracting buildings with pyrosm: {e}",
-                exc_info=True)
+            self.logger.error(f"Error extracting buildings with pyrosm: {e}", exc_info=True)
             return None, None
 
     def extract_pois(self, osm_parser: OSM):
@@ -467,14 +441,12 @@ class OSMDataHandler(DataHandler):
             tuple: (GeoDataFrame of POIs, Path to saved file)
         """
         if osm_parser is None:
-            self.logger.error(
-                "OSM parser not available from orchestrator. Cannot extract POIs.")
+            self.logger.error("OSM parser not available from orchestrator. Cannot extract POIs.")
             return None, None
 
         self.logger.info("Extracting POIs")
 
         try:
-
             # Extract POIs using OSMnx's current API
             pois = osm_parser.get_pois(
                 custom_filter=POI_TAGS,
@@ -490,17 +462,35 @@ class OSMDataHandler(DataHandler):
                 return None, None
 
             # Properties to keep
-            poi_keep_tags = set([
-                "id", "name", "amenity", "shop", "tourism", "leisure", "office",
-                "building", "building:use", "landuse", "man_made", "industrial",
-                "craft", "public_transport", "operator:type", "government", "military",
-                "description", "addr:street", "addr:housenumber", "addr:city", "name:en"
-            ])
+            poi_keep_tags = {
+                "id",
+                "name",
+                "amenity",
+                "shop",
+                "tourism",
+                "leisure",
+                "office",
+                "building",
+                "building:use",
+                "landuse",
+                "man_made",
+                "industrial",
+                "craft",
+                "public_transport",
+                "operator:type",
+                "government",
+                "military",
+                "description",
+                "addr:street",
+                "addr:housenumber",
+                "addr:city",
+                "name:en",
+            }
 
             # Filter the GeoDataFrame to keep only relevant columns
-            columns_to_keep = ['geometry']  # Always keep geometry
-            if 'osmid' in pois.columns:  # Keep osmid if present
-                columns_to_keep.append('osmid')
+            columns_to_keep = ["geometry"]  # Always keep geometry
+            if "osmid" in pois.columns:  # Keep osmid if present
+                columns_to_keep.append("osmid")
 
             for col in pois.columns:
                 if col in poi_keep_tags and col not in columns_to_keep:
@@ -510,7 +500,8 @@ class OSMDataHandler(DataHandler):
 
             self.logger.info(
                 f"Successfully extracted {
-                    len(pois)} POIs with OSMnx")
+                    len(pois)} POIs with OSMnx"
+            )
 
             # Save POIs
             pois_filepath = self.dataset_output_dir / "pois.geojson"
@@ -532,21 +523,19 @@ class OSMDataHandler(DataHandler):
             tuple: (GeoDataFrame of filtered landuse, Path to saved file)
         """
         if osm_parser is None:
-            self.logger.error(
-                "OSM parser not available from orchestrator. Cannot extract landuse.")
+            self.logger.error("OSM parser not available from orchestrator. Cannot extract landuse.")
             return None, None
 
         try:
-
             landuse_gdf = osm_parser.get_landuse()
 
             raw_landuse_filepath = self.dataset_output_dir / "raw" / "raw_landuse.geojson"
             landuse_gdf.to_file(raw_landuse_filepath, driver="GeoJSON")
 
             # Filter the GeoDataFrame to keep only relevant columns
-            columns_to_keep = ['geometry']  # Always keep geometry
-            if 'osmid' in landuse_gdf.columns:  # Keep osmid if present
-                columns_to_keep.append('osmid')
+            columns_to_keep = ["geometry"]  # Always keep geometry
+            if "osmid" in landuse_gdf.columns:  # Keep osmid if present
+                columns_to_keep.append("osmid")
 
             for col in landuse_gdf.columns:
                 if col in LANDUSE_TAGS and col not in columns_to_keep:
@@ -560,7 +549,8 @@ class OSMDataHandler(DataHandler):
 
             self.logger.info(
                 f"Extracted {
-                    len(landuse_gdf)} total landuse features")
+                    len(landuse_gdf)} total landuse features"
+            )
 
             # Define your simplified classification mapping
             landuse_categories = {
@@ -582,19 +572,17 @@ class OSMDataHandler(DataHandler):
                 "college": "public",
                 "university": "public",
                 "hospital": "public",
-                "institutional": "public"
+                "institutional": "public",
             }
 
             # Filter only relevant values
-            landuse_gdf = landuse_gdf[
-                landuse_gdf["landuse"].isin(landuse_categories.keys())
-            ].copy()
-            landuse_gdf["category"] = landuse_gdf["landuse"].map(
-                landuse_categories)
+            landuse_gdf = landuse_gdf[landuse_gdf["landuse"].isin(landuse_categories.keys())].copy()
+            landuse_gdf["category"] = landuse_gdf["landuse"].map(landuse_categories)
 
             self.logger.info(
                 f"Filtered down to {
-                    len(landuse_gdf)} categorized landuse polygons")
+                    len(landuse_gdf)} categorized landuse polygons"
+            )
 
             # Save file
             landuse_filepath = self.dataset_output_dir / "landuse.geojson"
@@ -604,9 +592,7 @@ class OSMDataHandler(DataHandler):
             return landuse_gdf, landuse_filepath
 
         except Exception as e:
-            self.logger.error(
-                f"Error extracting land use data: {e}",
-                exc_info=True)
+            self.logger.error(f"Error extracting land use data: {e}", exc_info=True)
             return None, None
 
     def download(self) -> Dict[str, Any]:
@@ -620,15 +606,15 @@ class OSMDataHandler(DataHandler):
         Returns:
             dict: Dictionary containing extracted data.
         """
-        results = {
-            'buildings': None,
-            'buildings_filepath': None,
-            'pois': None,
-            'pois_filepath': None,
-            'landuse': None,
-            'landuse_filepath': None,
-            'power': None,
-            'power_filepath': None,
+        results: Dict[str, Optional[Union[gpd.GeoDataFrame, Path]]] = {
+            "buildings": None,
+            "buildings_filepath": None,
+            "pois": None,
+            "pois_filepath": None,
+            "landuse": None,
+            "landuse_filepath": None,
+            "power": None,
+            "power_filepath": None,
         }
 
         # Initialize the OSM parser
@@ -644,49 +630,45 @@ class OSMDataHandler(DataHandler):
         if not buildings_filepath.exists():
             buildings, buildings_filepath = self.extract_buildings(osm_parser)
             if buildings is not None:
-                results['buildings'] = buildings
-                results['buildings_filepath'] = buildings_filepath
+                results["buildings"] = buildings
+                results["buildings_filepath"] = buildings_filepath
         else:
-            self.logger.info(
-                f"Using existing buildings file: {buildings_filepath}")
-            results['buildings'] = gpd.read_file(buildings_filepath)
-            results['buildings_filepath'] = buildings_filepath
+            self.logger.info(f"Using existing buildings file: {buildings_filepath}")
+            results["buildings"] = gpd.read_file(buildings_filepath)
+            results["buildings_filepath"] = buildings_filepath
 
         # Extract POIs
         if not pois_filepath.exists():
-            pois, pois_filepath = self.extract_pois(
-                osm_parser)  # This still uses osmnx
+            pois, pois_filepath = self.extract_pois(osm_parser)  # This still uses osmnx
             if pois is not None:
-                results['pois'] = pois
-            results['pois_filepath'] = pois_filepath
+                results["pois"] = pois
+            results["pois_filepath"] = pois_filepath
         else:
             self.logger.info(f"Using existing POIs file: {pois_filepath}")
-            results['pois'] = gpd.read_file(pois_filepath)
-            results['pois_filepath'] = pois_filepath
+            results["pois"] = gpd.read_file(pois_filepath)
+            results["pois_filepath"] = pois_filepath
 
         # Extract landuse
         if not landuse_filepath.exists():
             landuse, landuse_filepath = self.extract_landuse(osm_parser)
             if landuse is not None:
-                results['landuse'] = landuse
-                results['landuse_filepath'] = landuse_filepath
+                results["landuse"] = landuse
+                results["landuse_filepath"] = landuse_filepath
         else:
-            self.logger.info(
-                f"Using existing landuse file: {landuse_filepath}")
-            results['landuse'] = gpd.read_file(landuse_filepath)
-            results['landuse_filepath'] = landuse_filepath
+            self.logger.info(f"Using existing landuse file: {landuse_filepath}")
+            results["landuse"] = gpd.read_file(landuse_filepath)
+            results["landuse_filepath"] = landuse_filepath
 
         # Extract power infrastructure
         if not power_filepath.exists():
-            power, power_filepath = self.extract_power_infrastructure(
-                osm_parser)
+            power, power_filepath = self.extract_power_infrastructure(osm_parser)
             if power is not None:
-                results['power'] = power
-                results['power_filepath'] = power_filepath
+                results["power"] = power
+                results["power_filepath"] = power_filepath
         else:
             self.logger.info(f"Using existing power file: {power_filepath}")
-            results['power'] = gpd.read_file(power_filepath)
-            results['power_filepath'] = power_filepath
+            results["power"] = gpd.read_file(power_filepath)
+            results["power_filepath"] = power_filepath
 
         return results
 
@@ -695,29 +677,30 @@ class OSMDataHandler(DataHandler):
         Plot the OSM data.
         """
         # plot buildings
-        ax_buildings = osm_data['buildings'].plot(
-            column="building", figsize=(
-                12, 12), legend=True, legend_kwds=dict(
-                loc='upper left', ncol=3, bbox_to_anchor=(
-                    1, 1)))
+        ax_buildings = osm_data["buildings"].plot(
+            column="building",
+            figsize=(12, 12),
+            legend=True,
+            legend_kwds={"loc": "upper left", "ncol": 3, "bbox_to_anchor": (1, 1)},
+        )
         fig_buildings = ax_buildings.get_figure()
         fig_buildings.savefig(self.dataset_output_dir / "buildings.png")
         # plot pois
-        ax_pois = osm_data['pois'].plot(
-            column='amenity', markersize=3, figsize=(
-                12, 12), legend=True, legend_kwds=dict(
-                loc='upper left', ncol=5, bbox_to_anchor=(
-                    1, 1)))
+        ax_pois = osm_data["pois"].plot(
+            column="amenity",
+            markersize=3,
+            figsize=(12, 12),
+            legend=True,
+            legend_kwds={"loc": "upper left", "ncol": 5, "bbox_to_anchor": (1, 1)},
+        )
         fig_pois = ax_pois.get_figure()
         fig_pois.savefig(self.dataset_output_dir / "pois.png")
         # plot
-        ax_landuse = osm_data['landuse'].plot(
-            column='landuse', legend=True, figsize=(10, 6))
+        ax_landuse = osm_data["landuse"].plot(column="landuse", legend=True, figsize=(10, 6))
         fig_landuse = ax_landuse.get_figure()
         fig_landuse.savefig(self.dataset_output_dir / "landuse.png")
         # plot power
-        ax_power = osm_data['power'].plot(
-            column='power', legend=True, figsize=(10, 6))
+        ax_power = osm_data["power"].plot(column="power", legend=True, figsize=(10, 6))
         fig_power = ax_power.get_figure()
         fig_power.savefig(self.dataset_output_dir / "power.png")
 

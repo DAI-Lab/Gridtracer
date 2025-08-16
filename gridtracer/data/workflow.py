@@ -11,7 +11,13 @@ from pyrosm import OSM
 from shapely.geometry import MultiPolygon, Polygon
 
 from gridtracer.config.config_loader import (
-    EPSG, INPUT_DATA, LOG_FILE, LOG_LEVEL, OUTPUT_DIR, REGION,)
+    EPSG,
+    INPUT_DATA,
+    LOG_FILE,
+    LOG_LEVEL,
+    OUTPUT_DIR,
+    REGION,
+)
 from gridtracer.utils import create_logger
 
 # Define all known dataset names for directory creation
@@ -38,11 +44,7 @@ class WorkflowOrchestrator:
         """
         Initialize the WorkflowOrchestrator.
         """
-        self.logger = create_logger(
-            name="WorkflowOrchestrator",
-            log_level=LOG_LEVEL,
-            log_file=LOG_FILE
-        )
+        self.logger = create_logger(name="WorkflowOrchestrator", log_level=LOG_LEVEL, log_file=LOG_FILE)
         self.base_output_dir: Path = Path(OUTPUT_DIR)
 
         self.fips_dict: Optional[Dict[str, str]] = None
@@ -55,8 +57,7 @@ class WorkflowOrchestrator:
     def _initialize_orchestrator(self) -> None:
         """Initialize critical components of the orchestrator."""
         self._resolve_fips_codes()
-        self.is_county_subdivision = self.fips_dict.get(
-            'subdivision') is not None
+        self.is_county_subdivision = self.fips_dict.get("subdivision") is not None
         self._create_output_directories()
 
         self.logger.info(
@@ -71,18 +72,16 @@ class WorkflowOrchestrator:
         The FIPS lookup file is downloaded to the root of the configured output directory.
         """
         region_config = REGION
-        state = region_config.get('STATE')
-        county = region_config.get('COUNTY')
-        subdivision = region_config.get('COUNTY_SUBDIVISION')
-        lookup_url = region_config.get('LOOKUP_URL')
+        state = region_config.get("STATE")
+        county = region_config.get("COUNTY")
+        subdivision = region_config.get("COUNTY_SUBDIVISION")
+        lookup_url = region_config.get("LOOKUP_URL")
 
         if not all([state, county, lookup_url]):
             self.logger.error(
                 "Missing parameters for FIPS lookup: 'state', 'county', and 'lookup_url' are required in config."
             )
-            raise ValueError(
-                "State, county, and lookup_url must be provided in config for FIPS lookup."
-            )
+            raise ValueError("State, county, and lookup_url must be provided in config for FIPS lookup.")
 
         filename = os.path.basename(lookup_url)
         local_file_path = self.base_output_dir / filename
@@ -92,8 +91,7 @@ class WorkflowOrchestrator:
         self.base_output_dir.mkdir(parents=True, exist_ok=True)
 
         if not local_file_path.exists():
-            self.logger.info(
-                f"Downloading FIPS lookup file from {lookup_url} to {local_file_path}")
+            self.logger.info(f"Downloading FIPS lookup file from {lookup_url} to {local_file_path}")
             try:
                 # Download file first to temporary location, then move it
                 with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
@@ -102,67 +100,67 @@ class WorkflowOrchestrator:
                     # Move the temporary file to the final location
                     Path(tmp_file.name).rename(local_file_path)
 
-                self.logger.debug(
-                    f"FIPS lookup file saved to {local_file_path}")
+                self.logger.debug(f"FIPS lookup file saved to {local_file_path}")
             except Exception as e:
                 self.logger.error(f"Failed to download FIPS lookup file: {e}")
                 raise
         else:
-            self.logger.debug(
-                f"Using existing FIPS lookup file: {local_file_path}")
+            self.logger.debug(f"Using existing FIPS lookup file: {local_file_path}")
 
         try:
-            with open(local_file_path, 'r', encoding='latin-1') as infile:
+            with open(local_file_path, encoding="latin-1") as infile:
                 reader = csv.reader(infile)
                 processed_rows = []
                 for i, row in enumerate(reader):
-                    if i == 0 or (row and row[0] == 'STATE'):  # Skip header
+                    if i == 0 or (row and row[0] == "STATE"):  # Skip header
                         continue
                     if len(row) == 7:
                         processed_rows.append(row)
                     elif len(row) == 8:  # Handle known inconsistency in some files
-                        merged_row = row[:5] + \
-                            [row[5] + ' ' + row[6]] + [row[7]]
+                        merged_row = row[:5] + [row[5] + " " + row[6]] + [row[7]]
                         processed_rows.append(merged_row)
 
-            column_names = ['state_abbr', 'state_fips', 'county_fips', 'county_name',
-                            'subdivision_fips', 'subdivision_name', 'funcstat']
+            column_names = [
+                "state_abbr",
+                "state_fips",
+                "county_fips",
+                "county_name",
+                "subdivision_fips",
+                "subdivision_name",
+                "funcstat",
+            ]
             df = pd.DataFrame(processed_rows, columns=column_names)
 
-            state_df = df[df['state_abbr'] == state]
+            state_df = df[df["state_abbr"] == state]
             if state_df.empty:
-                raise ValueError(
-                    f"State abbreviation '{state}' not found in lookup file.")
+                raise ValueError(f"State abbreviation '{state}' not found in lookup file.")
 
-            county_matches = state_df[state_df['county_name'] == county]
+            county_matches = state_df[state_df["county_name"] == county]
             if county_matches.empty:
-                raise ValueError(
-                    f"County '{county}' not found in state '{state}'.")
+                raise ValueError(f"County '{county}' not found in state '{state}'.")
 
             county_data = county_matches.iloc[0]
             self.fips_dict = {
-                'state': state,
-                'state_fips': county_data['state_fips'],
-                'county': county,
-                'county_fips': county_data['county_fips'],
-                'subdivision': None,
-                'subdivision_fips': None,
-                'funcstat': None
+                "state": state,
+                "state_fips": county_data["state_fips"],
+                "county": county,
+                "county_fips": county_data["county_fips"],
+                "subdivision": None,
+                "subdivision_fips": None,
+                "funcstat": None,
             }
 
             if subdivision:
-                subdiv_match = county_matches[county_matches['subdivision_name'] == subdivision]
+                subdiv_match = county_matches[county_matches["subdivision_name"] == subdivision]
                 if subdiv_match.empty:
-                    raise ValueError(
-                        f"Subdivision '{subdivision}' not found in county '{county}', state '{state}'."
-                    )
+                    raise ValueError(f"Subdivision '{subdivision}' not found in county '{county}', state '{state}'.")
                 subdiv_data = subdiv_match.iloc[0]
-                self.fips_dict['subdivision'] = subdivision
-                self.fips_dict['subdivision_fips'] = subdiv_data['subdivision_fips']
-                self.fips_dict['funcstat'] = subdiv_data['funcstat']
+                self.fips_dict["subdivision"] = subdivision
+                self.fips_dict["subdivision_fips"] = subdiv_data["subdivision_fips"]
+                self.fips_dict["funcstat"] = subdiv_data["funcstat"]
 
             # Simple formatted logging
-            if self.fips_dict['subdivision']:
+            if self.fips_dict["subdivision"]:
                 self.logger.info(
                     f"FIPS codes resolved: {
                         self.fips_dict['state']} - {
@@ -178,7 +176,7 @@ class WorkflowOrchestrator:
 
         except Exception as e:
             self.logger.error(f"Error processing FIPS lookup file: {e}")
-            raise ValueError(f"Failed to lookup FIPS codes: {e}")
+            raise ValueError("Failed to lookup FIPS codes") from e
 
     def _create_output_directories(self) -> None:
         """
@@ -188,17 +186,15 @@ class WorkflowOrchestrator:
         """
         regional_path = self.base_output_dir
 
-        if self.fips_dict and self.fips_dict.get(
-                'state') and self.fips_dict.get('county'):
-            state_dir_name = self.fips_dict['state'].replace(' ', '_')
-            county_dir_name = self.fips_dict['county'].replace(' ', '_')
+        if self.fips_dict and self.fips_dict.get("state") and self.fips_dict.get("county"):
+            state_dir_name = self.fips_dict["state"].replace(" ", "_")
+            county_dir_name = self.fips_dict["county"].replace(" ", "_")
             regional_path = regional_path / state_dir_name / county_dir_name
 
-            if self.is_county_subdivision and self.fips_dict.get(
-                    'subdivision'):
-                subdivision_name = self.fips_dict['subdivision']
+            if self.is_county_subdivision and self.fips_dict.get("subdivision"):
+                subdivision_name = self.fips_dict["subdivision"]
                 if subdivision_name:
-                    subdivision_dir_name = subdivision_name.replace(' ', '_')
+                    subdivision_dir_name = subdivision_name.replace(" ", "_")
                     regional_path = regional_path / subdivision_dir_name
         else:
             self.logger.warning(
@@ -211,14 +207,14 @@ class WorkflowOrchestrator:
         self.regional_base_output_dir.mkdir(parents=True, exist_ok=True)
         self.logger.info(
             f"Set output directory to: {
-                self.regional_base_output_dir}")
+                self.regional_base_output_dir}"
+        )
 
         # Create subdirectories for all known datasets
         for dataset_name in ALL_DATASETS:
             dataset_path = self.regional_base_output_dir / dataset_name
             dataset_path.mkdir(parents=True, exist_ok=True)
-            self.logger.debug(
-                f"Ensured dataset directory exists: {dataset_path}")
+            self.logger.debug(f"Ensured dataset directory exists: {dataset_path}")
 
     def get_dataset_specific_output_directory(self, dataset_name: str) -> Path:
         """
@@ -235,10 +231,8 @@ class WorkflowOrchestrator:
         """
 
         if dataset_name not in ALL_DATASETS:
-            self.logger.error(
-                f"Dataset '{dataset_name}' is not a recognized dataset in ALL_DATASETS.")
-            raise ValueError(
-                f"Unknown dataset name: {dataset_name}. Must be one of {ALL_DATASETS}")
+            self.logger.error(f"Dataset '{dataset_name}' is not a recognized dataset in ALL_DATASETS.")
+            raise ValueError(f"Unknown dataset name: {dataset_name}. Must be one of {ALL_DATASETS}")
 
         dataset_dir = self.regional_base_output_dir / dataset_name
 
@@ -279,10 +273,8 @@ class WorkflowOrchestrator:
             ValueError: If the region boundary has not been set yet.
         """
         if self.region_boundary_gdf is None:
-            self.logger.error(
-                "Attempted to access region boundary before it was set.")
-            raise ValueError(
-                "Region boundary has not been set yet. Process census data first.")
+            self.logger.error("Attempted to access region boundary before it was set.")
+            raise ValueError("Region boundary has not been set yet. Process census data first.")
         return self.region_boundary_gdf
 
     def _initialize_osm_parser(self) -> Optional[OSM]:
@@ -302,8 +294,7 @@ class WorkflowOrchestrator:
 
         if not osm_pbf_path.exists():
             self.logger.error(
-                f"OSM PBF file path ('osm_pbf_file') not found at: {osm_pbf_path}. "
-                "Cannot initialize OSM parser."
+                f"OSM PBF file path ('osm_pbf_file') not found at: {osm_pbf_path}. " "Cannot initialize OSM parser."
             )
             return None
 
@@ -323,44 +314,33 @@ class WorkflowOrchestrator:
                 buffered_geometry_EPSG = boundary_geometry_EPSG.buffer(25.0)
 
                 # Create a temporary GeoDataFrame to hold the buffered geometry
-                buffered_gdf_EPSG = gpd.GeoDataFrame(
-                    [buffered_geometry_EPSG], columns=['geometry'], crs=f"EPSG:{EPSG}"
-                )
+                buffered_gdf_EPSG = gpd.GeoDataFrame([buffered_geometry_EPSG], columns=["geometry"], crs=f"EPSG:{EPSG}")
                 # Reproject to WGS84 (EPSG:4326) as expected by pyrosm
                 boundary_gdf_4326 = buffered_gdf_EPSG.to_crs("EPSG:4326")
                 final_boundary_geometry = boundary_gdf_4326.geometry.iloc[0]
 
                 # Ensure the geometry is a Polygon or MultiPolygon as expected
                 # by pyrosm
-                if not isinstance(final_boundary_geometry,
-                                  (Polygon, MultiPolygon)):
+                if not isinstance(final_boundary_geometry, (Polygon, MultiPolygon)):
                     self.logger.error(
                         f"Boundary geometry is not a Polygon or MultiPolygon "
                         f"(type: {type(final_boundary_geometry)}). "
                         "OSM parser might not work as expected."
                     )
 
-                osm_parser = OSM(
-                    str(osm_pbf_path),
-                    bounding_box=final_boundary_geometry)
-                self.logger.info(
-                    "pyrosm.OSM parser initialized successfully with bounding box.")
+                osm_parser = OSM(str(osm_pbf_path), bounding_box=final_boundary_geometry)
+                self.logger.info("pyrosm.OSM parser initialized successfully with bounding box.")
             else:
                 # No boundary set - process entire PBF file
                 osm_parser = OSM(str(osm_pbf_path))
-                self.logger.info(
-                    "pyrosm.OSM parser initialized successfully for entire PBF file.")
+                self.logger.info("pyrosm.OSM parser initialized successfully for entire PBF file.")
 
             return osm_parser
         except FileNotFoundError:
-            self.logger.error(
-                f"OSM PBF file not found by pyrosm at: {osm_pbf_path}",
-                exc_info=True)
+            self.logger.error(f"OSM PBF file not found by pyrosm at: {osm_pbf_path}", exc_info=True)
             return None
         except Exception as e:
-            self.logger.error(
-                f"Error initializing pyrosm.OSM parser: {e}",
-                exc_info=True)
+            self.logger.error(f"Error initializing pyrosm.OSM parser: {e}", exc_info=True)
             return None
 
     def get_osm_parser(self) -> Optional[OSM]:
@@ -375,7 +355,6 @@ class WorkflowOrchestrator:
             self._osm_parser = self._initialize_osm_parser()
 
         if self._osm_parser is None:
-            self.logger.warning(
-                "OSM parser could not be initialized or is not available.")
+            self.logger.warning("OSM parser could not be initialized or is not available.")
 
         return self._osm_parser

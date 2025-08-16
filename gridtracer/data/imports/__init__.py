@@ -12,9 +12,9 @@ from gridtracer.data.imports.osm.osm_data_handler import OSMDataHandler
 from gridtracer.data.imports.osm.road_network_builder import RoadNetworkBuilder
 
 __all__ = [
-    'DataHandler',
-    'CensusDataHandler',
-    'NRELDataHandler',
-    'OSMDataHandler',
-    'RoadNetworkBuilder',
+    "DataHandler",
+    "CensusDataHandler",
+    "NRELDataHandler",
+    "OSMDataHandler",
+    "RoadNetworkBuilder",
 ]

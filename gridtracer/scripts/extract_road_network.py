@@ -8,6 +8,7 @@ configured region.
 Usage:
     python -m gridtracer.scripts.extract_road_network --plot
 """
+
 import argparse
 import time
 
@@ -55,7 +56,7 @@ def extract_road_network(boundary_file_path: str = None, plot: bool = False):
         road_network_builder = RoadNetworkBuilder(orchestrator=orchestrator)
         road_network_results = road_network_builder.process()
         if plot:
-            visualize_road_network(road_network_results['geojson_file'], boundary_gdf)
+            visualize_road_network(road_network_results["geojson_file"], boundary_gdf)
 
         logger.info("Road Network Extraction completed successfully.")
 
@@ -69,16 +70,13 @@ def extract_road_network(boundary_file_path: str = None, plot: bool = False):
         # Calculate and log total execution time
         end_time = time.time()
         total_time = end_time - start_time
-        logger.info(
-            "Road Network Extraction finished in %.2f seconds", total_time
-        )
+        logger.info("Road Network Extraction finished in %.2f seconds", total_time)
 
 
 def main():
     """Main entry point for the script."""
     parser = argparse.ArgumentParser(
-        description="Extract and build a routable road network for a "
-        "configured region."
+        description="Extract and build a routable road network for a " "configured region."
     )
     parser.add_argument(
         "--boundary_file_path",

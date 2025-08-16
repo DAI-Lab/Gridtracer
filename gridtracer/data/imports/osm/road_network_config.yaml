@@ -6,7 +6,7 @@ way_tag_resolver:
     - car
     - bike
     - foot
-  
+
   # Structure: highway_type: {priority, clazz, maxspeed, flags: [list_of_flags]}
   tags:
     motorway:       { priority: 1, clazz: 11, maxspeed: 120, flags: ["car"] }
@@ -22,10 +22,10 @@ way_tag_resolver:
     residential:    { priority: 1, clazz: 41, maxspeed: 40,  flags: ["car", "bike"] }
     road:           { priority: 1, clazz: 42, maxspeed: 50,  flags: ["car", "bike"] }
     unclassified:   { priority: 1, clazz: 43, maxspeed: 50,  flags: ["car", "bike"] }
-    service:        { priority: 1, clazz: 51, maxspeed: 15,  flags: ["car", "bike"] } 
+    service:        { priority: 1, clazz: 51, maxspeed: 15,  flags: ["car", "bike"] }
     living_street:  { priority: 1, clazz: 63, maxspeed: 7,   flags: ["car", "bike", "foot"] }
     pedestrian:     { priority: 1, clazz: 62, maxspeed: 5,   flags: ["bike", "foot"] }
-    track:          { priority: 1, clazz: 71, maxspeed: 10,  flags: ["bike", "foot"] } 
+    track:          { priority: 1, clazz: 71, maxspeed: 10,  flags: ["bike", "foot"] }
     path:           { priority: 1, clazz: 72, maxspeed: 10,  flags: ["bike", "foot"] }
     cycleway:       { priority: 1, clazz: 81, maxspeed: 15,  flags: ["bike"] }
     footway:        { priority: 2, clazz: 91, maxspeed: 5,   flags: ["foot"] }

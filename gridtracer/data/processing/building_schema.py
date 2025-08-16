@@ -49,8 +49,7 @@ class ResidentialBuildingOutput:
         return [field.name for field in dataclasses.fields(cls)]
 
     @classmethod
-    def prepare_default_output(
-            cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    def prepare_default_output(cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Prepares residential buildings data for default output format.
 
@@ -73,15 +72,12 @@ class ResidentialBuildingOutput:
         schema_fields = cls.get_schema_fields()
 
         # Filter to only include columns that exist in the schema
-        available_schema_columns = [
-            col for col in schema_fields if col in output_buildings.columns
-        ]
+        available_schema_columns = [col for col in schema_fields if col in output_buildings.columns]
         output_buildings = output_buildings[available_schema_columns]
 
         # Add missing optional columns with None values
         for field in schema_fields:
-            if field not in output_buildings.columns and (
-                    field != 'geometry' or field != 'osm_id'):
+            if field not in output_buildings.columns and (field != "geometry" or field != "osm_id"):
                 output_buildings[field] = None
 
         return output_buildings
@@ -123,8 +119,7 @@ class NonResidentialBuildingOutput:
         return [field.name for field in dataclasses.fields(cls)]
 
     @classmethod
-    def prepare_default_output(
-            cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    def prepare_default_output(cls, buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Prepares non-residential buildings data for default output format.
 
@@ -147,15 +142,12 @@ class NonResidentialBuildingOutput:
         schema_fields = cls.get_schema_fields()
 
         # Filter to only include columns that exist in the schema
-        available_schema_columns = [
-            col for col in schema_fields if col in output_buildings.columns
-        ]
+        available_schema_columns = [col for col in schema_fields if col in output_buildings.columns]
         output_buildings = output_buildings[available_schema_columns]
 
         # Add missing optional columns with None values
         for field in schema_fields:
-            if field not in output_buildings.columns and (
-                    field != 'geometry' or field != 'osm_id'):
+            if field not in output_buildings.columns and (field != "geometry" or field != "osm_id"):
                 output_buildings[field] = None
 
         return output_buildings

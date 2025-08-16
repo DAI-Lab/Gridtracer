@@ -18,13 +18,20 @@ if TYPE_CHECKING:
 
 # Expected NREL vintage categories (based on actual NREL data)
 EXPECTED_VINTAGE_BINS = [
-    "<1940", "1940s", "1950s", "1960s", "1970s",
-    "1980s", "1990s", "2000s", "2010s"
+    "<1940",
+    "1940s",
+    "1950s",
+    "1960s",
+    "1970s",
+    "1980s",
+    "1990s",
+    "2000s",
+    "2010s",
 ]
 
 CHUNK_SIZE = 100_000
-NREL_COUNTY_COLUMN = 'in.county'
-NREL_VINTAGE_COLUMN = 'in.vintage'
+NREL_COUNTY_COLUMN = "in.county"
+NREL_VINTAGE_COLUMN = "in.vintage"
 
 
 class NRELDataHandler(DataHandler):
@@ -36,7 +43,7 @@ class NRELDataHandler(DataHandler):
     It uses the WorkflowOrchestrator for context and configuration.
     """
 
-    def __init__(self, orchestrator: 'WorkflowOrchestrator'):
+    def __init__(self, orchestrator: "WorkflowOrchestrator"):
         """
         Initialize the NREL data handler.
 
@@ -47,14 +54,12 @@ class NRELDataHandler(DataHandler):
         super().__init__(orchestrator)  # Call base class init with orchestrator
 
         self.input_file_path: Optional[Path] = None
-        nrel_path_str = INPUT_DATA.get('NREL_FILE')
+        nrel_path_str = INPUT_DATA.get("NREL_FILE")
 
         if nrel_path_str:
             self.input_file_path = Path(nrel_path_str)
         else:
-            self.logger.warning(
-                "NREL input data path ('nrel_data') not found in configuration."
-            )
+            self.logger.warning("NREL input data path ('nrel_data') not found in configuration.")
 
     def _get_dataset_name(self) -> str:
         """
@@ -88,11 +93,11 @@ class NRELDataHandler(DataHandler):
             Dict containing parquet_path, csv_path, data, and vintage_distribution
         """
         # Standard result structure
-        result: Dict[str, any] = {
-            'parquet_path': None,
-            'csv_path': None,
-            'data': None,
-            'vintage_distribution': OrderedDict()
+        result: Dict[str, Any] = {
+            "parquet_path": None,
+            "csv_path": None,
+            "data": None,
+            "vintage_distribution": OrderedDict(),
         }
 
         if not self._validate_inputs():
@@ -102,17 +107,16 @@ class NRELDataHandler(DataHandler):
         paths = self.download()
         result.update(paths)
 
-        parquet_path = result['parquet_path']
+        parquet_path = result["parquet_path"]
         if not parquet_path or not parquet_path.exists():
             return result
 
         # Compute vintage distribution
-        result['vintage_distribution'] = self._compute_vintage_distribution(
-            parquet_path)
+        result["vintage_distribution"] = self._compute_vintage_distribution(parquet_path)
 
         # Load data
         try:
-            result['data'] = pd.read_parquet(parquet_path)
+            result["data"] = pd.read_parquet(parquet_path)
             self.logger.info(f"Loaded {len(result['data'])} NREL records")
         except Exception as e:
             self.logger.error(f"Error loading NREL data: {e}")
@@ -124,7 +128,8 @@ class NRELDataHandler(DataHandler):
         if not self.input_file_path or not self.input_file_path.exists():
             self.logger.error(
                 f"NREL input file not found: {
-                    self.input_file_path}")
+                    self.input_file_path}"
+            )
             return False
 
         return True
@@ -136,13 +141,12 @@ class NRELDataHandler(DataHandler):
 
         return {
             "parquet_path": self.dataset_output_dir / f"{filename_base}.parquet",
-            "csv_path": self.dataset_output_dir / f"{filename_base}.csv"
+            "csv_path": self.dataset_output_dir / f"{filename_base}.csv",
         }
 
     def _files_exist(self, file_paths: Dict[str, Path]) -> bool:
         """Check if both output files already exist."""
-        return (file_paths["parquet_path"].exists()
-                and file_paths["csv_path"].exists())
+        return file_paths["parquet_path"].exists() and file_paths["csv_path"].exists()
 
     def _log_files_exist(self) -> None:
         """Log that files already exist."""
@@ -158,7 +162,7 @@ class NRELDataHandler(DataHandler):
         self.logger.info(f"Extracting NREL data for {region_name}")
 
         try:
-            county_data = self._process_file_chunks(fips['state_fips'], fips['county_fips'])
+            county_data = self._process_file_chunks(fips["state_fips"], fips["county_fips"])
 
             if county_data.empty:
                 self.logger.warning(f"No NREL data found for {region_name}")
@@ -176,29 +180,25 @@ class NRELDataHandler(DataHandler):
         """Process CSV file in chunks and extract county data."""
         county_data_frames = []
 
-        for chunk in pd.read_csv(
-            self.input_file_path, sep="\t", chunksize=CHUNK_SIZE, low_memory=False
-        ):
+        for chunk in pd.read_csv(self.input_file_path, sep="\t", chunksize=CHUNK_SIZE, low_memory=False):
             county_chunk = self._extract_county_chunk(chunk, state_fips, county_fips)
             if not county_chunk.empty:
                 county_data_frames.append(county_chunk)
 
-        return pd.concat(county_data_frames,
-                         ignore_index=True) if county_data_frames else pd.DataFrame()
+        return pd.concat(county_data_frames, ignore_index=True) if county_data_frames else pd.DataFrame()
 
     def _save_data_files(self, data: pd.DataFrame, file_paths: Dict[str, Path]) -> None:
         """Save data to both parquet and CSV files."""
         data.to_parquet(file_paths["parquet_path"], index=False)
         data.to_csv(file_paths["csv_path"], index=False)
 
-    def _extract_county_chunk(self, chunk: pd.DataFrame,
-                              state_fips: str, county_fips: str) -> pd.DataFrame:
+    def _extract_county_chunk(self, chunk: pd.DataFrame, state_fips: str, county_fips: str) -> pd.DataFrame:
         """Extract records matching the target county from a data chunk."""
         if NREL_COUNTY_COLUMN not in chunk.columns:
             return pd.DataFrame()
 
         # Clean county IDs (remove 'G' prefix)
-        county_ids = chunk[NREL_COUNTY_COLUMN].astype(str).str.removeprefix('G')
+        county_ids = chunk[NREL_COUNTY_COLUMN].astype(str).str.removeprefix("G")
 
         # Create state and county filters
         state_filter = self._create_state_filter(county_ids, state_fips)
@@ -210,18 +210,14 @@ class NRELDataHandler(DataHandler):
         """Create boolean filter for state FIPS matching."""
         state_match = pd.Series(False, index=county_ids.index)
         valid_length = county_ids.str.len() >= 2
-        state_match[valid_length] = (
-            county_ids[valid_length].str[:2] == state_fips.zfill(2)
-        )
+        state_match[valid_length] = county_ids[valid_length].str[:2] == state_fips.zfill(2)
         return state_match
 
     def _create_county_filter(self, county_ids: pd.Series, county_fips: str) -> pd.Series:
         """Create boolean filter for county FIPS matching."""
         county_match = pd.Series(False, index=county_ids.index)
         valid_length = county_ids.str.len() >= 6
-        county_match[valid_length] = (
-            county_ids[valid_length].str[3:6] == county_fips.zfill(3)
-        )
+        county_match[valid_length] = county_ids[valid_length].str[3:6] == county_fips.zfill(3)
         return county_match
 
     def _compute_vintage_distribution(
@@ -252,15 +248,15 @@ class NRELDataHandler(DataHandler):
 
         # Map NREL vintage labels directly to our bins
         nrel_to_bins_mapping = {
-            '<1940': '<1940',
-            '1940s': '1940s',
-            '1950s': '1950s',
-            '1960s': '1960s',
-            '1970s': '1970s',
-            '1980s': '1980s',
-            '1990s': '1990s',
-            '2000s': '2000s',
-            '2010s': '2010s'
+            "<1940": "<1940",
+            "1940s": "1940s",
+            "1950s": "1950s",
+            "1960s": "1960s",
+            "1970s": "1970s",
+            "1980s": "1980s",
+            "1990s": "1990s",
+            "2000s": "2000s",
+            "2010s": "2010s",
         }
 
         # Map each record to a bin using direct label mapping

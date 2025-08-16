@@ -24,22 +24,21 @@ class ConfigLoader:
 
         if config_path is None:
             # Default to config.yaml in the same directory as this script
-            self.config_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
+            self.config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
         else:
             self.config_path = config_path
 
-        self.config: Dict[str, Any] = self._load_config()
+        self.config = self._load_config()
 
         # Expose logging configuration as direct attributes for simple access
-        self.log_level: int = self._parse_log_level()
-        self.log_file: str = self._parse_log_file()
+        self.log_level = self._parse_log_level()
+        self.log_file = self._parse_log_file()
 
         # Expose constants from config as direct attributes
-        self.EPSG: int = self.config.get('EPSG', 5070)
-        self.BUILDING_TYPE_THRESHOLDS: Dict[str, Any] = self.config.get(
-            'BUILDING_TYPE_THRESHOLDS', {})
-        self.CENSUS_URLS: Dict[str, str] = self.config.get('CENSUS_URLS', {})
-        self.MSFT_BUILD_FOOTPRINTS: Dict[str, str] = self.config.get('MSFT_BUILD_FOOTPRINTS', {})
+        self.EPSG = self.config.get("EPSG", 5070)
+        self.BUILDING_TYPE_THRESHOLDS = self.config.get("BUILDING_TYPE_THRESHOLDS", {})
+        self.CENSUS_URLS = self.config.get("CENSUS_URLS", {})
+        self.MSFT_BUILD_FOOTPRINTS = self.config.get("MSFT_BUILD_FOOTPRINTS", {})
 
         self._validate_region()
 
@@ -51,7 +50,7 @@ class ConfigLoader:
             dict: Configuration as a dictionary
         """
         try:
-            with open(self.config_path, 'r') as f:
+            with open(self.config_path) as f:
                 config_data = yaml.safe_load(f)
                 self.logger.info(f"Loaded configuration from {self.config_path}")
                 return config_data
@@ -87,16 +86,16 @@ class ConfigLoader:
         Returns:
             str: The path to the log file.
         """
-        return self.config.get('LOG_FILE', 'log.txt')
+        return self.config.get("LOG_FILE", "log.txt")
 
     def _validate_region(self):
         """
         Validate that the region configuration contains necessary information.
         """
         region = self.get_region()
-        if not region.get('STATE'):
+        if not region.get("STATE"):
             self.logger.warning("No state specified in configuration")
-        if not region.get('COUNTY'):
+        if not region.get("COUNTY"):
             self.logger.warning("No county specified in configuration")
 
     def get_region(self):
@@ -106,7 +105,7 @@ class ConfigLoader:
         Returns:
             dict: Region configuration with state, county, and count_subdivision
         """
-        return self.config.get('REGION', {})
+        return self.config.get("REGION", {})
 
     def get_input_data_paths(self):
         """
@@ -115,7 +114,7 @@ class ConfigLoader:
         Returns:
             dict: Dictionary of input data paths
         """
-        return self.config.get('INPUT_DATA', {})
+        return self.config.get("INPUT_DATA", {})
 
     def get_output_dir(self):
         """
@@ -124,7 +123,7 @@ class ConfigLoader:
         Returns:
             str: Output directory path
         """
-        return Path(self.config.get('OUTPUT_DIR', 'gridtracer/output/'))
+        return Path(self.config.get("OUTPUT_DIR", "gridtracer/output/"))
 
     def get_epsg(self) -> int:
         """

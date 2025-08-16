@@ -7,4 +7,4 @@ for the data import pipeline, including road network generation.
 
 from gridtracer.data.imports.osm.road_network_builder import RoadNetworkBuilder
 
-__all__ = ['RoadNetworkBuilder']
+__all__ = ["RoadNetworkBuilder"]

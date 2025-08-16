@@ -14,8 +14,7 @@ logger = create_logger(
 )
 
 
-def visualize_road_network(network_data, boundary_gdf=None,
-                           output_dir=None, title="Road Network"):
+def visualize_road_network(network_data, boundary_gdf=None, output_dir=None, title="Road Network"):
     """
     Simple visualization of a road network.
 
@@ -53,30 +52,19 @@ def visualize_road_network(network_data, boundary_gdf=None,
     network_mercator = network_gdf.to_crs(epsg=3857)
 
     # Plot network
-    network_mercator.plot(ax=ax, color='blue', linewidth=0.8)
+    network_mercator.plot(ax=ax, color="blue", linewidth=0.8)
 
     # Add boundary if provided
     if boundary_gdf is not None and not boundary_gdf.empty:
         boundary_mercator = boundary_gdf.to_crs(epsg=3857)
-        boundary_mercator.plot(
-            ax=ax,
-            facecolor='none',
-            edgecolor='green',
-            linewidth=2.0,
-            linestyle='--'
-        )
+        boundary_mercator.plot(ax=ax, facecolor="none", edgecolor="green", linewidth=2.0, linestyle="--")
 
     # Get bounds for the map
     list(network_mercator.total_bounds)
 
     # Add basemap
     try:
-        ctx.add_basemap(
-            ax,
-            source=ctx.providers.CartoDB.Positron,
-            zoom='auto',
-            crs="EPSG:3857"
-        )
+        ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron, zoom="auto", crs="EPSG:3857")
     except Exception as e:
         logger.warning(f"Could not add basemap: {e}")
 
@@ -86,7 +74,7 @@ def visualize_road_network(network_data, boundary_gdf=None,
 
     # Save the plot
     output_file = output_dir / "road_network.png"
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    plt.savefig(output_file, dpi=300, bbox_inches="tight")
     plt.close()
 
     logger.info(f"Road network visualization saved to: {output_file}")
