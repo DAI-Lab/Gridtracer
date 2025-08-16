@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import geopandas as gpd
 import pandas as pd
 from shapely.ops import unary_union
-from tqdm import tqdm
 
 from gridtracer.config.config_loader import EPSG, OUTPUT_DIR
 from gridtracer.data.imports.base import DataHandler
@@ -353,13 +352,7 @@ class CountySubdivisionHandler(DataHandler):
         else:
             # Parallel processing for multiple tasks
             with Pool(min(num_processes, len(tasks))) as pool:
-                results = list(
-                    tqdm(
-                        pool.imap_unordered(self.process_state, tasks),
-                        total=len(tasks),
-                        desc="Processing All States",
-                    )
-                )
+                results = list(pool.imap_unordered(self.process_state, tasks))
         # Flatten the list of lists of not-found subdivisions
         all_not_found = [item for sublist in results if sublist for item in sublist]
 
@@ -385,10 +378,7 @@ class CountySubdivisionHandler(DataHandler):
             # Combine all chunks into one file
             self.logger.info("Combining all state chunks into a single file...")
             all_chunks = []
-            for chunk_file in tqdm(
-                sorted(chunks_directory.glob("*_census_chunk.csv")),
-                desc="Combining Chunks",
-            ):
+            for chunk_file in sorted(chunks_directory.glob("*_census_chunk.csv")):
                 all_chunks.append(pd.read_csv(chunk_file))
 
             if all_chunks:
