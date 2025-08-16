@@ -44,12 +44,9 @@ development_requires = [
     "Sphinx>=7.0.0",
     "sphinx_rtd_theme>=2.0.0",
     "autodocsumm>=0.1.10",
-    # style check
-    "flake8>=3.7.7",
-    "isort>=4.3.4",
-    # fix style issues
-    "autoflake>=1.2",
-    "autopep8>=1.4.3",
+    # style check and formatting
+    "ruff>=0.1.0",
+    "pre-commit>=3.0.0",
     # distribute on PyPI
     "twine>=1.10.0",
     "wheel>=0.30.0",

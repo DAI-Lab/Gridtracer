@@ -48,7 +48,6 @@ lint: ## check style with pre-commit
 .PHONY: install-develop
 install-develop: clean-build clean-pyc ## install the package in editable mode and dependencies for development
 	pip install -e .[dev]
-	pip install pre-commit ruff
 	pre-commit install
 
 .PHONY: test-all
